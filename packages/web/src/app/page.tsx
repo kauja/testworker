@@ -56,7 +56,11 @@ export default async function HomePage() {
             <div className="mt-3 flex items-center gap-6 text-xs text-ink-muted">
               <Stat label="pages" value={r.pageCount} />
               <Stat label="edges" value={r.edgeCount} />
-              <Stat label="errors" value={r.errorCount} tone={r.errorCount > 0 ? 'bad' : undefined} />
+              <Stat
+                label="errors"
+                value={r.errorCount}
+                tone={r.errorCount > 0 ? 'bad' : undefined}
+              />
             </div>
           </Link>
         ))}
@@ -65,18 +69,12 @@ export default async function HomePage() {
   );
 }
 
-function Stat({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone?: 'bad' | 'ok';
-}) {
+function Stat({ label, value, tone }: { label: string; value: number; tone?: 'bad' | 'ok' }) {
   return (
     <span className="inline-flex items-baseline gap-1.5">
-      <span className={cn('font-mono text-sm', tone === 'bad' ? 'text-bad' : 'text-ink')}>{value}</span>
+      <span className={cn('font-mono text-sm', tone === 'bad' ? 'text-bad' : 'text-ink')}>
+        {value}
+      </span>
       <span className="text-[11px] uppercase tracking-wider text-ink-faint">{label}</span>
     </span>
   );

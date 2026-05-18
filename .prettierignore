@@ -1,0 +1,18 @@
+# Generated / vendored
+pnpm-lock.yaml
+node_modules
+dist
+build
+.next
+
+# Local data volume and ignored runner outputs
+data/
+
+# Local Claude state (gitignored — see .gitignore)
+.claude/projects/
+.claude/local/
+.claude/sessions/
+.claude/cache/
+
+# Personal decision log (gitignored — local only)
+docs/decisions/

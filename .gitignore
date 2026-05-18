@@ -39,3 +39,22 @@ playwright/.cache/
 
 # Auth
 storage-state.json
+storage-state-*.json
+auth/
+secrets/
+
+# Test targets — テスト対象のアプリ・私的 fixture は絶対にコミットしない
+test-target/
+test-targets/
+fixtures-private/
+scratch/
+tmp/
+sandbox/
+*.har
+*.cassette.json
+
+# Local Claude state（プロジェクト固有設定は .claude/settings.json のみ追跡）
+.claude/local/
+.claude/sessions/
+.claude/cache/
+.claude/.last-*

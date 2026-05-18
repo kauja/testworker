@@ -35,9 +35,11 @@ export function createMonitors(): PageMonitors {
     page.on('console', (msg) => {
       const type = msg.type();
       const level: ConsoleEntry['level'] =
-        type === 'warning' ? 'warn' : (['log', 'info', 'warn', 'error', 'debug'].includes(type)
-          ? (type as ConsoleEntry['level'])
-          : 'log');
+        type === 'warning'
+          ? 'warn'
+          : ['log', 'info', 'warn', 'error', 'debug'].includes(type)
+            ? (type as ConsoleEntry['level'])
+            : 'log';
       const loc = msg.location();
       consoleBuf.push({
         id: newEventId(),

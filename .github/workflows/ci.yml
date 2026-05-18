@@ -30,7 +30,7 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm install --frozen-lockfile
 
       - name: typecheck
         run: pnpm -r run typecheck

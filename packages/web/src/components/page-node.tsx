@@ -1,16 +1,16 @@
 'use client';
 
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import type { PageState } from '@testworker/shared';
 import { assetUrl } from '@/lib/api';
 import { cn } from '@/lib/cn';
 
-type Data = { page: PageState; selected: boolean };
+export type PageNodeData = { page: PageState; selected: boolean };
+export type PageNodeType = Node<PageNodeData, 'page'>;
 
-export function PageNode({ data }: NodeProps<{ data: Data } & Record<string, unknown>>) {
-  const { page, selected } = data as Data;
-  const hasError =
-    page.errorCount + page.consoleErrorCount + page.networkErrorCount > 0;
+export function PageNode({ data }: NodeProps<PageNodeType>) {
+  const { page, selected } = data;
+  const hasError = page.errorCount + page.consoleErrorCount + page.networkErrorCount > 0;
   return (
     <div
       className={cn(
@@ -43,7 +43,9 @@ export function PageNode({ data }: NodeProps<{ data: Data } & Record<string, unk
         )}
       </div>
       <div className="px-3 py-2">
-        <div className="truncate text-[12px] font-medium text-ink">{page.title || '(untitled)'}</div>
+        <div className="truncate text-[12px] font-medium text-ink">
+          {page.title || '(untitled)'}
+        </div>
         <div className="truncate text-[11px] text-ink-faint">{page.url}</div>
       </div>
       <Handle type="source" position={Position.Right} className="!h-1.5 !w-1.5 !bg-line" />

@@ -118,22 +118,19 @@ export function listRuns(db: Database.Database): RunSummary[] {
 export function getGraph(db: Database.Database, runId: string): GraphPayload | null {
   const runRow = db.prepare(`SELECT * FROM runs WHERE id = ?`).get(runId) as RunRow | undefined;
   if (!runRow) return null;
-  const pages = (db.prepare(`SELECT * FROM page_states WHERE run_id = ?`).all(runId) as PageRow[]).map(
-    rowToPage,
-  );
+  const pages = (
+    db.prepare(`SELECT * FROM page_states WHERE run_id = ?`).all(runId) as PageRow[]
+  ).map(rowToPage);
   const edges = (db.prepare(`SELECT * FROM edges WHERE run_id = ?`).all(runId) as EdgeRow[]).map(
     rowToEdge,
   );
   return { run: rowToRun(runRow), pages, edges };
 }
 
-export function getPageDetail(
-  db: Database.Database,
-  pageStateId: string,
-): PageDetail | null {
-  const pageRow = db
-    .prepare(`SELECT * FROM page_states WHERE id = ?`)
-    .get(pageStateId) as PageRow | undefined;
+export function getPageDetail(db: Database.Database, pageStateId: string): PageDetail | null {
+  const pageRow = db.prepare(`SELECT * FROM page_states WHERE id = ?`).get(pageStateId) as
+    | PageRow
+    | undefined;
   if (!pageRow) return null;
   const page = rowToPage(pageRow);
   const consoleRows = db
@@ -205,14 +202,10 @@ export function getPageDetail(
     timestamp: r.timestamp,
   }));
   const incoming = (
-    db
-      .prepare(`SELECT * FROM edges WHERE to_page_state_id = ?`)
-      .all(pageStateId) as EdgeRow[]
+    db.prepare(`SELECT * FROM edges WHERE to_page_state_id = ?`).all(pageStateId) as EdgeRow[]
   ).map(rowToEdge);
   const outgoing = (
-    db
-      .prepare(`SELECT * FROM edges WHERE from_page_state_id = ?`)
-      .all(pageStateId) as EdgeRow[]
+    db.prepare(`SELECT * FROM edges WHERE from_page_state_id = ?`).all(pageStateId) as EdgeRow[]
   ).map(rowToEdge);
   return { page, console: consoleEntries, network, errors, incoming, outgoing };
 }
