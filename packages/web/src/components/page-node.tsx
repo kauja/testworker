@@ -10,8 +10,7 @@ export type PageNodeType = Node<PageNodeData, 'page'>;
 
 export function PageNode({ data }: NodeProps<PageNodeType>) {
   const { page, selected } = data;
-  const hasError =
-    page.errorCount + page.consoleErrorCount + page.networkErrorCount > 0;
+  const hasError = page.errorCount + page.consoleErrorCount + page.networkErrorCount > 0;
   return (
     <div
       className={cn(
@@ -44,7 +43,9 @@ export function PageNode({ data }: NodeProps<PageNodeType>) {
         )}
       </div>
       <div className="px-3 py-2">
-        <div className="truncate text-[12px] font-medium text-ink">{page.title || '(untitled)'}</div>
+        <div className="truncate text-[12px] font-medium text-ink">
+          {page.title || '(untitled)'}
+        </div>
         <div className="truncate text-[11px] text-ink-faint">{page.url}</div>
       </div>
       <Handle type="source" position={Position.Right} className="!h-1.5 !w-1.5 !bg-line" />

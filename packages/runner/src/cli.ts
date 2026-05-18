@@ -43,7 +43,9 @@ async function main(): Promise<void> {
     console.log(`[testworker] crawl start: ${startUrl}`);
     console.log(`  depth=${overrides.maxDepth} pages=${overrides.maxPages}`);
     const report = await runCrawl(db, env.dataDir, overrides);
-    console.log(`[testworker] done: run=${report.run.id} pages=${report.pages} edges=${report.edges}`);
+    console.log(
+      `[testworker] done: run=${report.run.id} pages=${report.pages} edges=${report.edges}`,
+    );
   } finally {
     db.close();
   }

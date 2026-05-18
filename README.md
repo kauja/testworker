@@ -52,12 +52,12 @@ open http://localhost:3000
 └────────────┘                └────────────┘
 ```
 
-| パッケージ | 説明 |
-| ---------- | ---- |
-| `packages/shared` | Zod スキーマ・型定義（全体で共有） |
-| `packages/runner` | Playwright クロール本体・SQLite 書き込み・CLI |
+| パッケージ        | 説明                                                    |
+| ----------------- | ------------------------------------------------------- |
+| `packages/shared` | Zod スキーマ・型定義（全体で共有）                      |
+| `packages/runner` | Playwright クロール本体・SQLite 書き込み・CLI           |
 | `packages/api`    | Hono で SQLite を JSON 配信、スクリーンショット静的配信 |
-| `packages/web`    | Next.js 15 + React Flow + Tailwind の閲覧 UI |
+| `packages/web`    | Next.js 15 + React Flow + Tailwind の閲覧 UI            |
 
 ---
 
@@ -147,11 +147,11 @@ pnpm --filter @testworker/runner run crawl -- --url http://localhost:3000
 
 ## データ
 
-| パス | 内容 |
-| ---- | ---- |
-| `data/db/testworker.sqlite` | run / page / edge / log メタデータ |
-| `data/runs/<runId>/screenshots/*.png` | スクリーンショット |
-| `data/auth/*.json` | （任意）`storageState` を置く場所 |
+| パス                                  | 内容                               |
+| ------------------------------------- | ---------------------------------- |
+| `data/db/testworker.sqlite`           | run / page / edge / log メタデータ |
+| `data/runs/<runId>/screenshots/*.png` | スクリーンショット                 |
+| `data/auth/*.json`                    | （任意）`storageState` を置く場所  |
 
 `./data` は `.gitignore` 済みです。
 

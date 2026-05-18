@@ -104,7 +104,8 @@ export function insertConsoleBatch(db: Db, entries: ConsoleEntry[]): void {
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
   const tx = db.$sqlite.transaction((rows: ConsoleEntry[]) => {
-    for (const r of rows) stmt.run(r.id, r.pageStateId, r.level, r.text, r.url, r.lineNumber, r.timestamp);
+    for (const r of rows)
+      stmt.run(r.id, r.pageStateId, r.level, r.text, r.url, r.lineNumber, r.timestamp);
   });
   tx(entries);
 }
@@ -148,4 +149,3 @@ export function insertErrorBatch(db: Db, entries: PageError[]): void {
   });
   tx(entries);
 }
-
