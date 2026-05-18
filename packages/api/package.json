@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@hono/node-server": "^1.13.5",
+    "@hono/node-server": "^2.0.3",
     "@testworker/shared": "workspace:*",
     "better-sqlite3": "^11.3.0",
     "hono": "^4.6.9"
