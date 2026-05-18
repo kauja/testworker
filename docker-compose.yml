@@ -1,0 +1,74 @@
+name: testworker
+
+x-common-env: &common-env
+  DATA_DIR: /data
+  DB_PATH: /data/db/testworker.sqlite
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      target: dev
+    environment:
+      <<: *common-env
+      API_PORT: 3001
+    ports:
+      - "${API_PORT:-3001}:3001"
+    volumes:
+      - ./packages:/workspace/packages
+      - ./package.json:/workspace/package.json
+      - ./pnpm-workspace.yaml:/workspace/pnpm-workspace.yaml
+      - ./tsconfig.base.json:/workspace/tsconfig.base.json
+      - ./data:/data
+      - api_node_modules:/workspace/node_modules
+    working_dir: /workspace
+    command: pnpm --filter @testworker/api run dev
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      target: dev
+    environment:
+      WEB_PORT: 3000
+      API_BASE_URL: http://api:3001
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:${API_PORT:-3001}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    volumes:
+      - ./packages:/workspace/packages
+      - ./package.json:/workspace/package.json
+      - ./pnpm-workspace.yaml:/workspace/pnpm-workspace.yaml
+      - ./tsconfig.base.json:/workspace/tsconfig.base.json
+      - web_node_modules:/workspace/node_modules
+    working_dir: /workspace
+    command: pnpm --filter @testworker/web run dev
+    depends_on:
+      - api
+
+  # オンデマンド実行: `docker compose run --rm runner <url>` の形で使う。
+  runner:
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: docker/runner.Dockerfile
+    environment:
+      <<: *common-env
+    volumes:
+      - ./packages:/workspace/packages
+      - ./package.json:/workspace/package.json
+      - ./pnpm-workspace.yaml:/workspace/pnpm-workspace.yaml
+      - ./tsconfig.base.json:/workspace/tsconfig.base.json
+      - ./data:/data
+      - runner_node_modules:/workspace/node_modules
+    working_dir: /workspace
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # entrypoint/command は Makefile から `pnpm --filter @testworker/runner run …` 形で渡す
+    command: ["pnpm", "--filter", "@testworker/runner", "run", "crawl"]
+
+volumes:
+  api_node_modules:
+  web_node_modules:
+  runner_node_modules:

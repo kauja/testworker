@@ -1,0 +1,26 @@
+# gh CLI または GitHub Web で適用する想定のラベル定義（参考）。
+# 取り込みたい場合は `EndBug/label-sync` などの workflow を別途追加。
+- name: auto-merge
+  color: 0E8A16
+  description: CI 通過後に自動で squash merge
+- name: bug
+  color: d73a4a
+  description: 不具合
+- name: enhancement
+  color: a2eeef
+  description: 機能追加・改善
+- name: dependencies
+  color: 0366d6
+  description: 依存関係更新
+- name: ci
+  color: 1d76db
+  description: CI / ワークフロー
+- name: docker
+  color: 0db7ed
+  description: Docker 関連
+- name: docs
+  color: 0075ca
+  description: ドキュメント
+- name: good first issue
+  color: 7057ff
+  description: 初めての貢献者におすすめ

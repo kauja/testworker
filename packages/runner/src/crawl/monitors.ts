@@ -1,0 +1,164 @@
+import type { BrowserContext, Page, Request, Response } from 'playwright';
+import {
+  newEventId,
+  type ConsoleEntry,
+  type NetworkEntry,
+  type PageError,
+} from '@testworker/shared';
+
+export interface PageMonitors {
+  console: ConsoleEntry[];
+  network: NetworkEntry[];
+  errors: PageError[];
+  attach: (page: Page) => void;
+  bindContext: (ctx: BrowserContext) => void;
+  /** 現在のページ用にバッファをリセット。前のページ分は保存後に呼ぶ。 */
+  rotate: () => MonitorSnapshot;
+}
+
+export interface MonitorSnapshot {
+  console: ConsoleEntry[];
+  network: NetworkEntry[];
+  errors: PageError[];
+}
+
+export function createMonitors(): PageMonitors {
+  let consoleBuf: ConsoleEntry[] = [];
+  let networkBuf: NetworkEntry[] = [];
+  let errorsBuf: PageError[] = [];
+  /** 現在割り当て中の pageStateId は確定前なのでプレースホルダーで保持し、後で埋める。 */
+  const PLACEHOLDER = '__current__';
+
+  const requestStart = new WeakMap<Request, number>();
+
+  function attach(page: Page): void {
+    page.on('console', (msg) => {
+      const type = msg.type();
+      const level: ConsoleEntry['level'] =
+        type === 'warning' ? 'warn' : (['log', 'info', 'warn', 'error', 'debug'].includes(type)
+          ? (type as ConsoleEntry['level'])
+          : 'log');
+      const loc = msg.location();
+      consoleBuf.push({
+        id: newEventId(),
+        pageStateId: PLACEHOLDER,
+        level,
+        text: msg.text(),
+        url: loc?.url || null,
+        lineNumber: loc?.lineNumber ?? null,
+        timestamp: new Date().toISOString(),
+      });
+    });
+
+    page.on('pageerror', (err) => {
+      errorsBuf.push({
+        id: newEventId(),
+        pageStateId: PLACEHOLDER,
+        kind: 'pageerror',
+        message: err.message,
+        stack: err.stack ?? null,
+        timestamp: new Date().toISOString(),
+      });
+    });
+
+    page.on('crash', () => {
+      errorsBuf.push({
+        id: newEventId(),
+        pageStateId: PLACEHOLDER,
+        kind: 'crash',
+        message: 'page crashed',
+        stack: null,
+        timestamp: new Date().toISOString(),
+      });
+    });
+
+    page.on('request', (req) => {
+      requestStart.set(req, Date.now());
+    });
+
+    page.on('requestfailed', (req) => {
+      const started = requestStart.get(req);
+      networkBuf.push({
+        id: newEventId(),
+        pageStateId: PLACEHOLDER,
+        method: req.method(),
+        url: req.url(),
+        status: null,
+        statusText: null,
+        resourceType: req.resourceType(),
+        startedAt: new Date(started ?? Date.now()).toISOString(),
+        durationMs: started ? Date.now() - started : null,
+        fromCache: false,
+        failed: true,
+        failureText: req.failure()?.errorText ?? null,
+      });
+    });
+
+    page.on('requestfinished', async (req) => {
+      const started = requestStart.get(req);
+      let res: Response | null = null;
+      try {
+        res = await req.response();
+      } catch {
+        res = null;
+      }
+      networkBuf.push({
+        id: newEventId(),
+        pageStateId: PLACEHOLDER,
+        method: req.method(),
+        url: req.url(),
+        status: res?.status() ?? null,
+        statusText: res?.statusText() ?? null,
+        resourceType: req.resourceType(),
+        startedAt: new Date(started ?? Date.now()).toISOString(),
+        durationMs: started ? Date.now() - started : null,
+        fromCache: Boolean(res && res.fromServiceWorker()) || false,
+        failed: false,
+        failureText: null,
+      });
+    });
+  }
+
+  function bindContext(ctx: BrowserContext): void {
+    ctx.on('weberror', (err) => {
+      errorsBuf.push({
+        id: newEventId(),
+        pageStateId: PLACEHOLDER,
+        kind: 'unhandledrejection',
+        message: err.error().message,
+        stack: err.error().stack ?? null,
+        timestamp: new Date().toISOString(),
+      });
+    });
+  }
+
+  function rotate(): MonitorSnapshot {
+    const snap = { console: consoleBuf, network: networkBuf, errors: errorsBuf };
+    consoleBuf = [];
+    networkBuf = [];
+    errorsBuf = [];
+    return snap;
+  }
+
+  return {
+    get console() {
+      return consoleBuf;
+    },
+    get network() {
+      return networkBuf;
+    },
+    get errors() {
+      return errorsBuf;
+    },
+    attach,
+    bindContext,
+    rotate,
+  };
+}
+
+export function applyPageStateId<T extends { pageStateId: string }>(
+  items: T[],
+  pageStateId: string,
+): T[] {
+  return items.map((item) => ({ ...item, pageStateId }));
+}

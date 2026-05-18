@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: theme('colors.bg.DEFAULT');
+  color: theme('colors.ink.DEFAULT');
+}
+
+body {
+  font-feature-settings:
+    'cv02',
+    'cv03',
+    'cv04',
+    'cv11';
+}
+
+/* React Flow テーマ調整 */
+.react-flow__renderer,
+.react-flow__background {
+  background: theme('colors.bg.DEFAULT');
+}
+.react-flow__edge-path {
+  stroke: theme('colors.line');
+  stroke-width: 1.25;
+}
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:hover .react-flow__edge-path {
+  stroke: theme('colors.accent.DEFAULT');
+}
+.react-flow__controls {
+  background: theme('colors.bg.panel');
+  border: 1px solid theme('colors.line');
+  border-radius: 8px;
+  overflow: hidden;
+}
+.react-flow__controls button {
+  background: transparent;
+  border: none;
+  color: theme('colors.ink.muted');
+}
+.react-flow__controls button:hover {
+  background: theme('colors.bg.subtle');
+  color: theme('colors.ink.DEFAULT');
+}
+.react-flow__minimap {
+  background: theme('colors.bg.panel');
+  border: 1px solid theme('colors.line');
+  border-radius: 8px;
+}
+.react-flow__attribution {
+  display: none;
+}
