@@ -53,8 +53,16 @@ sandbox/
 *.har
 *.cassette.json
 
-# Local Claude state（プロジェクト固有設定は .claude/settings.json のみ追跡）
+# 意思決定の記録は個人ログとしてローカル保持（公開リスク回避のため tree には残さない）
+docs/decisions/
+
+# Local Claude state
+#   追跡対象: .claude/settings.json + .claude/hooks/* + .claude/README.md
+#   （OSS としてエージェント運用を再現可能にするため公開）
+# 除外対象: ユーザ固有 / 機械生成のもの
 .claude/local/
 .claude/sessions/
 .claude/cache/
 .claude/.last-*
+.claude/settings.local.json
+.claude/projects/

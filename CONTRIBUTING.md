@@ -20,17 +20,21 @@ make up                          # web + api を起動
 make crawl URL=http://host.docker.internal:3000   # サンプルクロール
 ```
 
-### ブランチ & PR 戦略（必読）
+### Issue ドリブン
 
-- `main` は保護対象。直接 push 不可、force push 不可、PR + CI + 1 レビューが必須。
-- 作業はすべて feature ブランチで:
-  - `feat/<scope>` — 機能追加
-  - `fix/<scope>` — バグ修正
-  - `chore/<scope>` — 設定 / 依存 / CI
-  - `docs/<scope>` — ドキュメント
-  - `refactor/<scope>` — 振る舞いを変えないリファクタ
+- 作業対象はすべて **GitHub Issue** で管理（一覧: `gh issue list --label "status:ready"`）
+- 作業中に「これも対応が必要」と気付いたものは、**今 PR に混ぜず新規 Issue を起票** する（PR 肥大化防止）
+- 軽微な修正（typo、コメント整形など）は Issue 不要
+- ラベル: Type (`bug` / `enhancement` / `chore` / `docs` / `refactor`) + Area (`area:runner` / `api` / `web` / `ci` / `docs` / `harness`) + Priority (`priority:p0` / `p1` / `p2`)
+
+### ブランチ & PR 戦略
+
+- `main` は保護対象。直接 push 不可、force push 不可、PR + CI 通過が必須。
+- ブランチ命名: `<type>/issue-<N>-<short-kebab>`（Issue が無い軽微な作業は `<type>/<scope>`）
+  - `feat/<scope>` / `fix/<scope>` / `chore/<scope>` / `docs/<scope>` / `refactor/<scope>`
 - 1 PR = 1 関心事（変更行 500 行を目安に、超えるなら分割）
-- PR を出したら `auto-merge` ラベルを付与。CI 通過 + レビュー成立 で squash merge されます。
+- PR description に **`Closes #N`** を書き、Issue を自動 close
+- PR には `auto-merge` ラベルを付与。CI 通過後に GitHub auto-merge で squash merge されます。
 - コミットは `--amend` / `--no-verify` を使わないこと（履歴改変・hook bypass の温床）
 
 ### 公開してはいけないもの
