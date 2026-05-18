@@ -111,7 +111,8 @@ const RULES = [
     why: 'テスト対象アプリ・私的 fixture を testworker リポにコミットしてはならない。',
   },
   {
-    re: /\bgit\s+add\s+(?:-A|--all|\.)\b/,
+    // 単独の `.`（直後が空白か行末）にのみマッチ。`.prettierignore` 等のドット始まりファイル名は誤検出しない。
+    re: /\bgit\s+add\s+(?:-A\b|--all\b|\.(?=\s|$))/,
     why: 'git add -A / . は禁止（巻き込み事故防止）。明示的にファイル指定すること。',
   },
   {
