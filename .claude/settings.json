@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "defaultMode": "auto",
+    "allow": [
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git branch*)",
+      "Bash(git switch *)",
+      "Bash(git checkout -b *)",
+      "Bash(git checkout *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git fetch*)",
+      "Bash(git pull --rebase*)",
+      "Bash(git pull --ff-only*)",
+      "Bash(git stash*)",
+      "Bash(git rev-parse*)",
+      "Bash(git merge --abort)",
+      "Bash(git restore --staged *)",
+      "Bash(git push -u origin feat/*)",
+      "Bash(git push -u origin fix/*)",
+      "Bash(git push -u origin chore/*)",
+      "Bash(git push -u origin docs/*)",
+      "Bash(git push -u origin refactor/*)",
+      "Bash(git push origin feat/*)",
+      "Bash(git push origin fix/*)",
+      "Bash(git push origin chore/*)",
+      "Bash(git push origin docs/*)",
+      "Bash(git push origin refactor/*)",
+      "Bash(pnpm install*)",
+      "Bash(pnpm -r run *)",
+      "Bash(pnpm --filter * run *)",
+      "Bash(pnpm exec *)",
+      "Bash(pnpm dlx *)",
+      "Bash(make *)",
+      "Bash(docker --version)",
+      "Bash(docker compose *)",
+      "Bash(docker ps*)",
+      "Bash(docker images*)",
+      "Bash(docker inspect*)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr list*)",
+      "Bash(gh pr create*)",
+      "Bash(gh pr edit *)",
+      "Bash(gh pr ready *)",
+      "Bash(gh pr checks*)",
+      "Bash(gh pr diff*)",
+      "Bash(gh pr comment *)",
+      "Bash(gh pr review *)",
+      "Bash(gh pr merge --auto*)",
+      "Bash(gh run list*)",
+      "Bash(gh run view *)",
+      "Bash(gh run watch *)",
+      "Bash(gh issue list*)",
+      "Bash(gh issue view *)",
+      "Bash(gh issue create*)",
+      "Bash(gh label list*)",
+      "Bash(gh repo view*)",
+      "Bash(gh api repos/*/pulls*)",
+      "Bash(gh api repos/*/issues*)",
+      "Bash(gh api repos/*/branches/*/protection*)",
+      "Bash(node --version)",
+      "Bash(pnpm --version)",
+      "Bash(jq *)",
+      "Bash(rg *)",
+      "Bash(find . *)"
+    ],
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push --force-with-lease*)",
+      "Bash(git push origin main*)",
+      "Bash(git push origin HEAD:main*)",
+      "Bash(git push origin :*)",
+      "Bash(git push origin --delete*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean -f*)",
+      "Bash(git clean -fd*)",
+      "Bash(git clean -fx*)",
+      "Bash(git branch -D*)",
+      "Bash(git filter-branch*)",
+      "Bash(git filter-repo*)",
+      "Bash(git update-ref -d*)",
+      "Bash(git reflog expire*)",
+      "Bash(git remote remove *)",
+      "Bash(git remote rename *)",
+      "Bash(git remote set-url *)",
+      "Bash(git config --global *)",
+      "Bash(git config --system *)",
+      "Bash(gh repo delete*)",
+      "Bash(gh repo archive*)",
+      "Bash(gh repo unarchive*)",
+      "Bash(gh repo rename*)",
+      "Bash(gh repo edit *--visibility*)",
+      "Bash(gh auth logout*)",
+      "Bash(gh auth refresh*)",
+      "Bash(gh api*--method DELETE*)",
+      "Bash(gh api*-X DELETE*)",
+      "Bash(gh api*branches/main/protection*--method DELETE*)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~*)",
+      "Bash(rm -rf $HOME*)",
+      "Bash(rm -rf ..*)",
+      "Bash(rm -rf .git*)",
+      "Bash(sudo *)",
+      "Bash(chmod -R 777 *)",
+      "Bash(curl * | sh*)",
+      "Bash(curl * | bash*)",
+      "Bash(wget * | sh*)",
+      "Bash(wget * | bash*)",
+      "Write(.env)",
+      "Write(.env.*)",
+      "Write(auth/**)",
+      "Write(test-target/**)",
+      "Write(test-targets/**)",
+      "Write(fixtures-private/**)",
+      "Write(secrets/**)",
+      "Edit(.env)",
+      "Edit(.env.*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/guard-bash.mjs"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/guard-write.mjs"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/scan-commit.mjs"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/post-edit-format.mjs"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/stop-quality-check.mjs"
+          }
+        ]
+      }
+    ]
+  }
+}
