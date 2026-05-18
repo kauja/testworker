@@ -86,12 +86,12 @@ gh issue create \
 
 ### ラベル運用
 
-| カテゴリ | ラベル |
-| --- | --- |
-| Type | `bug` / `enhancement` / `chore` / `docs` / `refactor` / `question` |
-| Area | `area:runner` / `area:api` / `area:web` / `area:ci` / `area:docs` / `area:harness` |
-| Priority | `priority:p0` (緊急) / `priority:p1` (近いうち) / `priority:p2` (やれたら) |
-| Status | `status:ready` / `status:blocked` / `status:in-progress` |
+| カテゴリ | ラベル                                                                             |
+| -------- | ---------------------------------------------------------------------------------- |
+| Type     | `bug` / `enhancement` / `chore` / `docs` / `refactor` / `question`                 |
+| Area     | `area:runner` / `area:api` / `area:web` / `area:ci` / `area:docs` / `area:harness` |
+| Priority | `priority:p0` (緊急) / `priority:p1` (近いうち) / `priority:p2` (やれたら)         |
+| Status   | `status:ready` / `status:blocked` / `status:in-progress`                           |
 
 Issue 起票時に **Type と Area は必ず付ける**。Priority は迷ったら `p2`。
 
