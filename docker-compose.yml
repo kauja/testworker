@@ -14,7 +14,7 @@ services:
       <<: *common-env
       API_PORT: 3001
     ports:
-      - "${API_PORT:-3001}:3001"
+      - '${API_PORT:-3001}:3001'
     volumes:
       - ./packages:/workspace/packages
       - ./package.json:/workspace/package.json
@@ -35,7 +35,7 @@ services:
       API_BASE_URL: http://api:3001
       NEXT_PUBLIC_API_BASE_URL: http://localhost:${API_PORT:-3001}
     ports:
-      - "${WEB_PORT:-3000}:3000"
+      - '${WEB_PORT:-3000}:3000'
     volumes:
       - ./packages:/workspace/packages
       - ./package.json:/workspace/package.json
@@ -49,7 +49,7 @@ services:
 
   # オンデマンド実行: `docker compose run --rm runner <url>` の形で使う。
   runner:
-    profiles: ["tools"]
+    profiles: ['tools']
     build:
       context: .
       dockerfile: docker/runner.Dockerfile
@@ -64,9 +64,9 @@ services:
       - runner_node_modules:/workspace/node_modules
     working_dir: /workspace
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - 'host.docker.internal:host-gateway'
     # entrypoint/command は Makefile から `pnpm --filter @testworker/runner run …` 形で渡す
-    command: ["pnpm", "--filter", "@testworker/runner", "run", "crawl"]
+    command: ['pnpm', '--filter', '@testworker/runner', 'run', 'crawl']
 
 volumes:
   api_node_modules:

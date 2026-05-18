@@ -43,10 +43,16 @@ export function PageDetailPanel({ pageId }: { pageId: string | null }) {
   return (
     <aside className="flex h-full flex-col border-l border-line bg-bg-subtle">
       <div className="border-b border-line p-4">
-        <div className="truncate text-sm font-medium text-ink">{detail.page.title || '(untitled)'}</div>
+        <div className="truncate text-sm font-medium text-ink">
+          {detail.page.title || '(untitled)'}
+        </div>
         <div className="mt-1 truncate text-xs text-ink-muted">{detail.page.url}</div>
         <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
-          <Counter label="page errors" value={detail.errors.length} tone={detail.errors.length ? 'bad' : 'mute'} />
+          <Counter
+            label="page errors"
+            value={detail.errors.length}
+            tone={detail.errors.length ? 'bad' : 'mute'}
+          />
           <Counter
             label="console errors"
             value={detail.console.filter((c) => c.level === 'error').length}
@@ -98,7 +104,9 @@ export function PageDetailPanel({ pageId }: { pageId: string | null }) {
               <li key={c.id} className="px-4 py-2">
                 <div className="flex items-center gap-2">
                   <LevelTag level={c.level} />
-                  <span className="text-ink-faint">{new Date(c.timestamp).toLocaleTimeString()}</span>
+                  <span className="text-ink-faint">
+                    {new Date(c.timestamp).toLocaleTimeString()}
+                  </span>
                 </div>
                 <div className="mt-1 break-words font-mono text-[12px] text-ink">{c.text}</div>
                 {c.url && (
@@ -132,7 +140,9 @@ export function PageDetailPanel({ pageId }: { pageId: string | null }) {
                     <td className="px-3 py-1.5 font-mono">
                       <span className="block max-w-[260px] truncate">{n.url}</span>
                     </td>
-                    <td className="px-3 py-1.5 font-mono">{n.status ?? (n.failed ? 'FAIL' : '')}</td>
+                    <td className="px-3 py-1.5 font-mono">
+                      {n.status ?? (n.failed ? 'FAIL' : '')}
+                    </td>
                     <td className="px-3 py-1.5 text-ink-muted">{n.resourceType}</td>
                     <td className="px-3 py-1.5 text-ink-muted">{n.durationMs ?? ''} ms</td>
                   </tr>
@@ -192,18 +202,12 @@ function LevelTag({ level }: { level: string }) {
   );
 }
 
-function Counter({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone: 'bad' | 'mute';
-}) {
+function Counter({ label, value, tone }: { label: string; value: number; tone: 'bad' | 'mute' }) {
   return (
     <div className="rounded bg-bg-panel px-2 py-1.5">
-      <div className={cn('font-mono text-sm', tone === 'bad' ? 'text-bad' : 'text-ink')}>{value}</div>
+      <div className={cn('font-mono text-sm', tone === 'bad' ? 'text-bad' : 'text-ink')}>
+        {value}
+      </div>
       <div className="text-[10px] uppercase tracking-wider text-ink-faint">{label}</div>
     </div>
   );

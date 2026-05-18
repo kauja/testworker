@@ -18,7 +18,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               testworker
             </Link>
             <nav className="flex items-center gap-4 text-xs text-ink-muted">
-              <Link href="/" className="hover:text-ink">Runs</Link>
+              <Link href="/" className="hover:text-ink">
+                Runs
+              </Link>
               <a
                 href="https://github.com/"
                 target="_blank"
