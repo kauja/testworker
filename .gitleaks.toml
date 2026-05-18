@@ -1,0 +1,19 @@
+# gitleaks 設定
+# 参考: https://github.com/gitleaks/gitleaks
+[extend]
+useDefault = true
+
+[allowlist]
+description = "false positives / example values"
+paths = [
+  '''(?i)\.env\.example$''',
+  '''(?i)README\.md$''',
+  '''(?i)CONTRIBUTING\.md$''',
+  '''(?i)AGENTS\.md$''',
+  '''(?i)\.gitleaks\.toml$''',
+]
+regexes = [
+  # docs 内のプレースホルダー的トークン名（説明用途）
+  '''AKIAIOSFODNN7EXAMPLE''',
+  '''ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx''',
+]
