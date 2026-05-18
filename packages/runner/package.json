@@ -16,7 +16,7 @@
     "@testworker/shared": "workspace:*",
     "better-sqlite3": "^11.3.0",
     "playwright": "^1.49.0",
-    "zod": "^3.23.8"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
