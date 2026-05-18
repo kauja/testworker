@@ -20,9 +20,26 @@ make up                          # web + api を起動
 make crawl URL=http://host.docker.internal:3000   # サンプルクロール
 ```
 
-- ブランチ命名: `feat/<scope>`, `fix/<scope>`, `docs/<scope>`, `chore/<scope>` を推奨
-- 1 PR = 1 関心事
-- 大きな変更を入れる前に Issue を立てて方針合意を取ると安全です
+### ブランチ & PR 戦略（必読）
+
+- `main` は保護対象。直接 push 不可、force push 不可、PR + CI + 1 レビューが必須。
+- 作業はすべて feature ブランチで:
+  - `feat/<scope>` — 機能追加
+  - `fix/<scope>` — バグ修正
+  - `chore/<scope>` — 設定 / 依存 / CI
+  - `docs/<scope>` — ドキュメント
+  - `refactor/<scope>` — 振る舞いを変えないリファクタ
+- 1 PR = 1 関心事（変更行 500 行を目安に、超えるなら分割）
+- PR を出したら `auto-merge` ラベルを付与。CI 通過 + レビュー成立 で squash merge されます。
+- コミットは `--amend` / `--no-verify` を使わないこと（履歴改変・hook bypass の温床）
+
+### 公開してはいけないもの
+
+- テスト対象アプリのコード（リポジトリ外に置き、`docker-compose` から bind mount / URL 参照）
+- `.env`, トークン, 秘密鍵
+- `storage-state.json`, HAR, 個人情報を含むスクリーンショット
+
+→ `.gitignore` で防御していますが、**そもそも tree に置かない** ことを徹底してください。詳細は [`AGENTS.md`](./AGENTS.md) 参照（AI エージェント向けのハーネス）。
 
 ## コードスタイル
 
