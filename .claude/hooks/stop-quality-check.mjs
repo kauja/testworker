@@ -25,10 +25,8 @@ function git(args) {
 const status = git(['status', '--porcelain']).stdout?.trim();
 if (!status) process.exit(0);
 
-const diffNames = git(['diff', '--name-only', 'HEAD'])
-  .stdout?.trim()
-  .split('\n')
-  .filter(Boolean) ?? [];
+const diffNames =
+  git(['diff', '--name-only', 'HEAD']).stdout?.trim().split('\n').filter(Boolean) ?? [];
 
 const touchedPkgs = new Set();
 for (const name of diffNames) {

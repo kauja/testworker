@@ -47,13 +47,13 @@
 
 ## 公開してはいけないもの（絶対）
 
-| 種類 | 理由 | 置き場所 |
-| ---- | ---- | -------- |
+| 種類                     | 理由                           | 置き場所                                                               |
+| ------------------------ | ------------------------------ | ---------------------------------------------------------------------- |
 | テスト対象アプリのコード | 他者の知財・社内コードの可能性 | リポジトリ外に置き、`docker-compose` から bind mount または URL で参照 |
-| `.env`, credentials | 当然 | リポジトリ外 / Vault |
-| `storage-state.json` | セッショントークンを含む | `auth/`（`.gitignore` 済み） |
-| HAR / Cookies | 個人情報を含み得る | `data/runs/`（`.gitignore` 済み） |
-| 取得スクリーンショット | 個人情報 / 業務情報が映る | 同上 |
+| `.env`, credentials      | 当然                           | リポジトリ外 / Vault                                                   |
+| `storage-state.json`     | セッショントークンを含む       | `auth/`（`.gitignore` 済み）                                           |
+| HAR / Cookies            | 個人情報を含み得る             | `data/runs/`（`.gitignore` 済み）                                      |
+| 取得スクリーンショット   | 個人情報 / 業務情報が映る      | 同上                                                                   |
 
 **「`.gitignore` に追加すればコミットしてよい」は誤り**。そもそも testworker のツリーに置かない。
 
@@ -100,18 +100,18 @@ PR 出す前にエージェント自身が以下を確認:
 
 ## ハーネス（物理的な仕組み）
 
-| 仕組み | 場所 | 役割 |
-| ------ | ---- | ---- |
-| permission allow/deny | `.claude/settings.json` | 危険コマンドの literal block |
-| Bash guard hook | `.claude/hooks/guard-bash.mjs` | 文脈付き危険コマンドの block |
-| Write guard hook | `.claude/hooks/guard-write.mjs` | 秘密値・私的ディレクトリへの書き込み block |
-| Commit scan hook | `.claude/hooks/scan-commit.mjs` | commit 直後に秘密情報パターンを検知して警告 |
-| Auto-format hook | `.claude/hooks/post-edit-format.mjs` | Write/Edit 後に prettier 自動適用 |
-| Stop 品質チェック | `.claude/hooks/stop-quality-check.mjs` | 会話末尾で変更パッケージの typecheck を流し、結果を返す |
-| ブランチ保護 | GitHub | main は PR + CI 通過 + レビュー必須 |
-| `auto-merge` workflow | `.github/workflows/auto-merge.yml` | ラベル付き PR を CI 通過後に squash merge |
-| Secret scan workflow | `.github/workflows/secret-scan.yml` | gitleaks で PR ごとに走査 |
-| `.gitignore` | `.gitignore` | テスト対象・auth・data を tree から弾く |
+| 仕組み                | 場所                                   | 役割                                                    |
+| --------------------- | -------------------------------------- | ------------------------------------------------------- |
+| permission allow/deny | `.claude/settings.json`                | 危険コマンドの literal block                            |
+| Bash guard hook       | `.claude/hooks/guard-bash.mjs`         | 文脈付き危険コマンドの block                            |
+| Write guard hook      | `.claude/hooks/guard-write.mjs`        | 秘密値・私的ディレクトリへの書き込み block              |
+| Commit scan hook      | `.claude/hooks/scan-commit.mjs`        | commit 直後に秘密情報パターンを検知して警告             |
+| Auto-format hook      | `.claude/hooks/post-edit-format.mjs`   | Write/Edit 後に prettier 自動適用                       |
+| Stop 品質チェック     | `.claude/hooks/stop-quality-check.mjs` | 会話末尾で変更パッケージの typecheck を流し、結果を返す |
+| ブランチ保護          | GitHub                                 | main は PR + CI 通過 + レビュー必須                     |
+| `auto-merge` workflow | `.github/workflows/auto-merge.yml`     | ラベル付き PR を CI 通過後に squash merge               |
+| Secret scan workflow  | `.github/workflows/secret-scan.yml`    | gitleaks で PR ごとに走査                               |
+| `.gitignore`          | `.gitignore`                           | テスト対象・auth・data を tree から弾く                 |
 
 エージェントはこれらを**自分のためにも**機能させる。煩わしくても止められたら理由を読み、抜け道を探さずに方針を改めること。
 
