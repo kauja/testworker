@@ -2,7 +2,7 @@
 
 # Playwright 公式イメージ（Chromium 等を内蔵）。
 # https://mcr.microsoft.com/en-us/product/playwright/about
-FROM mcr.microsoft.com/playwright:v1.49.0-jammy
+FROM mcr.microsoft.com/playwright:v1.60.0-jammy
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
