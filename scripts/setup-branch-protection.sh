@@ -3,9 +3,9 @@
 #
 # 適用内容:
 #  - PR 経由のマージのみ許可（直接 push 禁止）
-#  - レビュー 1 件以上必須
-#  - 古いレビューは新コミットで dismiss
-#  - 必須ステータスチェック: ci / node, ci / docker
+#  - レビュー 0 必須（単独メンテナ前提。CI 通過のみで auto-merge 成立させる）
+#    → 共同メンテナが増えたら required_approving_review_count を 1+ に戻す
+#  - 必須ステータスチェック: ci / node, ci / docker, secret-scan / gitleaks
 #  - 会話の解決必須
 #  - 管理者にも適用
 #  - force push / 削除を禁止
@@ -33,12 +33,13 @@ gh api \
     "strict": true,
     "checks": [
       { "context": "typecheck / lint / build (Node)" },
-      { "context": "docker build smoke" }
+      { "context": "docker build smoke" },
+      { "context": "gitleaks" }
     ]
   },
   "enforce_admins": true,
   "required_pull_request_reviews": {
-    "required_approving_review_count": 1,
+    "required_approving_review_count": 0,
     "dismiss_stale_reviews": true,
     "require_code_owner_reviews": false
   },
