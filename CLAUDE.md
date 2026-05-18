@@ -12,10 +12,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **作業を始める前に [`AGENTS.md`](./AGENTS.md) を読むこと。** 自律で進めてよい範囲 / 確認が必要な範囲 / 公開禁止データ / PR 戦略がすべてそこにある。
 
-- `main` は保護対象。**直接 push しない**。常に `feat/*` → PR → `auto-merge` ラベル。
+- `main` は保護対象。**直接 push しない**。常に `feat/issue-<N>-<scope>` → PR → `auto-merge` ラベル。
+- **作業中に対応が必要と感じたら、PR に混ぜず即 Issue 起票**（`gh issue create ...`）。詳細は AGENTS.md「Issue ドリブン開発」。
 - `--amend` / `--no-verify` 禁止（こまめな commit + 履歴の追跡可能性を優先）
 - `git add -A` / `git add .` 禁止（巻き込み事故防止）。明示的にファイル指定。
 - テスト対象アプリ / `.env` / `storage-state` / HAR は **そもそも tree に置かない**。
+- 意思決定の歴史的経緯は `docs/decisions/`（gitignore 済み、ローカル個人ログ）に保管。
 - ハーネスで止められたら、抜け道を探さず方針を見直す（`.claude/settings.json` + `.claude/hooks/*` が物理ガード）。
 
 ## Architecture（読まないと迷う部分のみ）

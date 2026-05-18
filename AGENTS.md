@@ -57,6 +57,71 @@
 
 **「`.gitignore` に追加すればコミットしてよい」は誤り**。そもそも testworker のツリーに置かない。
 
+## Issue ドリブン開発（必読）
+
+このリポジトリは **「Issue を作る → 見つける → 処理する」** のサイクルで進める。意思決定の歴史的経緯は `docs/decisions/`（gitignore 済み、ローカル個人ログ）に保管している。
+
+### 作業中に「対応が必要」と感じたら、即 Issue を立てる
+
+**取り組みやすい原則**: 作業中に気付いた以下のものは **その PR に混ぜず、新しい Issue として起票** すること。
+
+- 関係ないバグ・改善案
+- 「これも直したい」と感じた周辺コード
+- TODO コメントの内容
+- ドキュメント不足
+- フォローアップが必要だが今 PR では出来ない事項
+
+**Why**: 「ついで対応」で PR が肥大化すると、レビューが困難になり、auto-merge も止まりやすい。1 PR = 1 関心事を守るため、混入を Issue として外出しする。
+
+**How**:
+
+```bash
+gh issue create \
+  --title "<type>: <short imperative>" \
+  --body "## 背景\n## やること\n## 関連\n- PR で発見: #<this PR>" \
+  --label "<type-label>,area:<area>,priority:p2"
+```
+
+起票したら **元の PR には Issue 番号だけ書く**（"フォローアップ: #N"）。混ぜない。
+
+### ラベル運用
+
+| カテゴリ | ラベル                                                                             |
+| -------- | ---------------------------------------------------------------------------------- |
+| Type     | `bug` / `enhancement` / `chore` / `docs` / `refactor` / `question`                 |
+| Area     | `area:runner` / `area:api` / `area:web` / `area:ci` / `area:docs` / `area:harness` |
+| Priority | `priority:p0` (緊急) / `priority:p1` (近いうち) / `priority:p2` (やれたら)         |
+| Status   | `status:ready` / `status:blocked` / `status:in-progress`                           |
+
+Issue 起票時に **Type と Area は必ず付ける**。Priority は迷ったら `p2`。
+
+### 次にやる Issue の見つけ方
+
+```bash
+gh issue list --label "status:ready" --label "priority:p0" --repo kauja/testworker
+gh issue list --label "status:ready" --label "priority:p1" --repo kauja/testworker
+gh issue list --label "status:ready" --repo kauja/testworker --json number,title,labels
+```
+
+**選び方**: `priority:p0` を最優先、なければ `priority:p1`、依存（`blockedBy`）がないもの。同優先度なら ID 昇順。
+
+### Issue を処理する
+
+1. ブランチ作成: `<type>/issue-<N>-<short-kebab>` 例: `feat/issue-12-export-har`
+2. Issue を `status:in-progress` に変更（任意、開発が長引く場合は推奨）
+3. 実装 → commit（こまめに）→ push
+4. PR 作成、description に **`Closes #N`** を必ず書く（merge で自動 close）
+5. `auto-merge` ラベル付与、CI 待ち
+6. merge 後、Issue が close されているか確認
+
+### 軽微な作業に Issue は不要
+
+- typo 修正
+- コメントの誤字
+- 整形だけの prettier 適用
+
+これらは PR タイトルで完結。
+
 ## こまめな commit と適切な PR 戦略
 
 ### コミット粒度
