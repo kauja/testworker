@@ -12,7 +12,7 @@
   "dependencies": {
     "@hono/node-server": "^1.13.5",
     "@testworker/shared": "workspace:*",
-    "better-sqlite3": "^11.3.0",
+    "better-sqlite3": "^12.10.0",
     "hono": "^4.6.9"
   },
   "devDependencies": {
