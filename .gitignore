@@ -56,6 +56,10 @@ sandbox/
 # 意思決定の記録は個人ログとしてローカル保持（公開リスク回避のため tree には残さない）
 docs/decisions/
 
+# Orchestrator runtime artifacts (scripts/orchestrate.py)
+.orchestrate/
+docs/orchestrate-reports/
+
 # Auto-resolve workflow runtime artifacts (scripts/auto-resolve-one.sh)
 .auto-resolve/
 
@@ -66,6 +70,7 @@ scripts/**/__pycache__/
 scripts/.ruff_cache/
 scripts/.mypy_cache/
 scripts/.pytest_cache/
+scripts/*.egg-info/
 
 # Local Claude state
 #   追跡対象: .claude/settings.json + .claude/hooks/* + .claude/README.md
