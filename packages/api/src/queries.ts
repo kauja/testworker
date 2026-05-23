@@ -50,15 +50,32 @@ interface EdgeRow {
 }
 
 function rowToRun(row: RunRow): Run {
-  const raw = JSON.parse(row.options_json);
-  const parsed = CrawlOptions.safeParse(raw);
-  if (!parsed.success) {
-    // schema 進化で古い run の options が現スキーマと不整合になっても
-    // /runs 全体を落とさない。生 JSON を Run 型として通過させ、警告だけ出す。
+  // disk corruption / 部分書き込み等で options_json が壊れていても /runs は落とさない。
+  let raw: unknown = {};
+  try {
+    raw = JSON.parse(row.options_json);
+  } catch (err) {
+    console.warn(
+      `[testworker-api] run ${row.id}: options_json JSON.parse failed`,
+      (err as Error).message,
+    );
+  }
+  // raw に startUrl が無い古い形式でも row.start_url で確実に補完する。
+  const merged: Record<string, unknown> =
+    typeof raw === 'object' && raw !== null ? { ...(raw as Record<string, unknown>) } : {};
+  if (typeof merged.startUrl !== 'string') merged.startUrl = row.start_url;
+  const parsed = CrawlOptions.safeParse(merged);
+  let options: CrawlOptions;
+  if (parsed.success) {
+    options = parsed.data;
+  } else {
     console.warn(
       `[testworker-api] run ${row.id}: options_json schema mismatch`,
       parsed.error.flatten(),
     );
+    // 最低限 startUrl + Zod の defaults だけで再構築する。型偽装を避け、
+    // downstream の `options.maxDepth` 等が undefined にならないことを保証する。
+    options = CrawlOptions.parse({ startUrl: row.start_url });
   }
   return {
     id: row.id,
@@ -66,7 +83,7 @@ function rowToRun(row: RunRow): Run {
     status: row.status as Run['status'],
     startedAt: row.started_at,
     finishedAt: row.finished_at,
-    options: parsed.success ? parsed.data : (raw as CrawlOptions),
+    options,
     errorMessage: row.error_message,
   };
 }
