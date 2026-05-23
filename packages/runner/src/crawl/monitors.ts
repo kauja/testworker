@@ -78,12 +78,58 @@ export function createMonitors(): PageMonitors {
       });
     });
 
+    // Playwright のイベント順は request → (response →) requestfinished / requestfailed。
+    // 前回の実装は requestfinished で初めて entry を push していたため、 順序的に先に
+    // 発火する response handler が WeakMap を引いても常に undefined となり、 全 network
+    // entry の status / statusText が null のまま DB に書かれる重大 regression を起こして
+    // いた。 ここでは request イベントで pending entry を作り、 response / requestfinished /
+    // requestfailed で同じ entry を mutating で埋めていく。
     page.on('request', (req) => {
-      requestStart.set(req, Date.now());
+      const started = Date.now();
+      requestStart.set(req, started);
+      const entry: NetworkEntry = {
+        id: newEventId(),
+        pageStateId: PLACEHOLDER,
+        method: req.method(),
+        url: req.url(),
+        status: null,
+        statusText: null,
+        resourceType: req.resourceType(),
+        startedAt: new Date(started).toISOString(),
+        durationMs: null,
+        fromCache: false,
+        failed: false,
+        failureText: null,
+      };
+      networkBuf.push(entry);
+      entryByRequest.set(req, entry);
+    });
+
+    page.on('response', (res) => {
+      const entry = entryByRequest.get(res.request());
+      if (entry === undefined) return;
+      entry.status = res.status();
+      entry.statusText = res.statusText();
+      entry.fromCache = res.fromServiceWorker();
+    });
+
+    page.on('requestfinished', (req) => {
+      const entry = entryByRequest.get(req);
+      const started = requestStart.get(req);
+      if (entry === undefined || started === undefined) return;
+      entry.durationMs = Date.now() - started;
     });
 
     page.on('requestfailed', (req) => {
+      const entry = entryByRequest.get(req);
       const started = requestStart.get(req);
+      if (entry !== undefined) {
+        entry.failed = true;
+        entry.failureText = req.failure()?.errorText ?? null;
+        if (started !== undefined) entry.durationMs = Date.now() - started;
+        return;
+      }
+      // 念のため: request イベントを観測せず failed だけ届く稀ケースのフォールバック。
       networkBuf.push({
         id: newEventId(),
         pageStateId: PLACEHOLDER,
@@ -98,43 +144,6 @@ export function createMonitors(): PageMonitors {
         failed: true,
         failureText: req.failure()?.errorText ?? null,
       });
-    });
-
-    // requestfinished に sync ハンドラで entry を push する。
-    // `await req.response()` を挟むと、その間に rotate() が走った場合に
-    // 古い entry が次ページのバッファに紛れ込む race を起こす（#39）。
-    // status は `response` イベントで遅延更新する。
-    page.on('requestfinished', (req) => {
-      const started = requestStart.get(req);
-      const entry: NetworkEntry = {
-        id: newEventId(),
-        pageStateId: PLACEHOLDER,
-        method: req.method(),
-        url: req.url(),
-        status: null,
-        statusText: null,
-        resourceType: req.resourceType(),
-        startedAt: new Date(started ?? Date.now()).toISOString(),
-        durationMs: started ? Date.now() - started : null,
-        fromCache: false,
-        failed: false,
-        failureText: null,
-      };
-      networkBuf.push(entry);
-      entryByRequest.set(req, entry);
-    });
-
-    page.on('response', (res) => {
-      // WeakMap で Request → 既に push 済みの entry 参照を引く。
-      // rotate でバッファが入れ替わっても entry オブジェクトは同じものを mutate するので、
-      // crawler 側で snap.network を mutating な applyPageStateId 経由で insert する限り、
-      // 遅延 status / fromCache が DB に反映される。
-      const req = res.request();
-      const entry = entryByRequest.get(req);
-      if (entry === undefined) return;
-      entry.status = res.status();
-      entry.statusText = res.statusText();
-      entry.fromCache = res.fromServiceWorker();
     });
   }
 
