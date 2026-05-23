@@ -17,11 +17,18 @@ export function PageDetailPanel({ pageId }: { pageId: string | null }) {
       setDetail(null);
       return;
     }
+    const ctrl = new AbortController();
     setLoading(true);
-    fetchPage(pageId)
+    fetchPage(pageId, { signal: ctrl.signal })
       .then((d) => setDetail(d))
-      .catch(() => setDetail(null))
-      .finally(() => setLoading(false));
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        setDetail(null);
+      })
+      .finally(() => {
+        if (!ctrl.signal.aborted) setLoading(false);
+      });
+    return () => ctrl.abort();
   }, [pageId]);
 
   if (!pageId) {
