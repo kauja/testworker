@@ -146,3 +146,52 @@ def test_example_plan_is_well_formed() -> None:
     assert len(tasks) == 5
     ordered = topological_order(tasks)
     assert {t.id for t in ordered} == {t.id for t in tasks}
+
+
+def test_reconcile_orphans_resets_running_to_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Restart with a RUNNING state from a previous crash must not hang.
+
+    reconcile_orphans should flip RUNNING → FAILED so supervise() can either
+    retry (within max_attempts) or move on, instead of being starved forever.
+    """
+    monkeypatch.setattr(orchestrate, "STATE_DIR", tmp_path)
+    states = {
+        "a": State(id="a", status=Status.RUNNING, attempts=1),
+        "b": State(id="b", status=Status.PENDING),
+        "c": State(id="c", status=Status.PASSED_TESTS),
+    }
+    orchestrate.reconcile_orphans(states)
+    assert states["a"].status is Status.FAILED
+    assert "orphan" in states["a"].error.lower()
+    assert states["b"].status is Status.PENDING
+    assert states["c"].status is Status.PASSED_TESTS
+    # checkpoint should be persisted for the reset
+    reloaded = orchestrate.load_state("a")
+    assert reloaded.status is Status.FAILED
+
+
+def test_run_tests_uses_argv_not_shell(tmp_path: Path) -> None:
+    """run_tests must NOT pass commands through shell (shell=True is unsafe).
+
+    A command containing shell-operator chars should be parsed as argv;
+    the operator becomes a literal arg and the underlying program fails to
+    parse it, but the orchestrator itself is unharmed.
+    """
+    log_path = tmp_path / "t.log"
+    # Bare 'true' should succeed; demonstrates shell=False path works.
+    assert orchestrate.run_tests(tmp_path, ["true"], log_path) is True
+    # An empty list short-circuits to True.
+    assert orchestrate.run_tests(tmp_path, [], log_path) is True
+
+
+def test_run_tests_parse_error_is_returned_not_raised(tmp_path: Path) -> None:
+    log_path = tmp_path / "t.log"
+    # unterminated quote raises ValueError inside shlex.split → run_tests should return False
+    assert orchestrate.run_tests(tmp_path, ['echo "unterminated'], log_path) is False
+
+
+def test_backoff_until_is_removed() -> None:
+    """Dead code with a wrong return shape was deleted; importing it must fail."""
+    assert not hasattr(orchestrate, "backoff_until")

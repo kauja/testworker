@@ -268,7 +268,11 @@ def spawn_claude(task: Task, worktree: Path, log_path: Path, dry_run: bool) -> s
 
 def run_tests(worktree: Path, tests: list[str], log_path: Path, dry_run: bool = False) -> bool:
     """Run each test command in the worktree. Returns True if all pass.
-    In dry_run mode, log the commands without executing and return True."""
+    In dry_run mode, log the commands without executing and return True.
+
+    各 test エントリは shlex.split() で argv に分解して shell=False で実行する。
+    && や | のような shell 演算子を使いたい場合は明示的に `sh -c '...'` を書くこと。
+    """
     if not tests:
         return True
     with log_path.open("ab") as fh:
@@ -278,8 +282,20 @@ def run_tests(worktree: Path, tests: list[str], log_path: Path, dry_run: bool = 
                 fh.write(f"[tests] (dry-run) $ {cmd}\n".encode())
                 continue
             fh.write(f"[tests] $ {cmd}\n".encode())
+            try:
+                argv = shlex.split(cmd)
+            except ValueError as exc:
+                fh.write(f"[tests] PARSE ERROR: {exc}\n".encode())
+                return False
+            if not argv:
+                fh.write(b"[tests] empty command, skipping\n")
+                continue
             res = subprocess.run(
-                cmd, shell=True, cwd=worktree, stdout=fh, stderr=subprocess.STDOUT, check=False
+                argv,
+                cwd=worktree,
+                stdout=fh,
+                stderr=subprocess.STDOUT,
+                check=False,
             )
             if res.returncode != 0:
                 fh.write(f"[tests] FAILED exit={res.returncode}\n".encode())
@@ -326,12 +342,6 @@ def detect_rate_limit(log_path: Path) -> bool:
     return any(marker.lower() in tail.lower() for marker in RATE_LIMIT_MARKERS)
 
 
-def backoff_until(attempts: int) -> str:
-    idx = min(attempts - 1, len(BACKOFF_SCHEDULE_SECONDS) - 1)
-    delta = BACKOFF_SCHEDULE_SECONDS[idx]
-    return datetime.now(UTC).timestamp().__add__(delta).__repr__()  # not used directly
-
-
 def schedule_backoff(state: State) -> None:
     idx = min(state.attempts - 1, len(BACKOFF_SCHEDULE_SECONDS) - 1)
     delta = BACKOFF_SCHEDULE_SECONDS[idx]
@@ -353,6 +363,19 @@ def all_deps_done(task: Task, states: dict[str, State]) -> bool:
     )
 
 
+def reconcile_orphans(states: dict[str, State]) -> None:
+    """前回のクラッシュで RUNNING のまま残った state を FAILED に倒す。
+
+    これをしないと supervise() の running カウンタが永続的に max_concurrent を超え、
+    新規 spawn できず terminal 判定も成立せず無限ループに陥る。"""
+    for st in states.values():
+        if st.status == Status.RUNNING:
+            log.warning("[%s] orphan RUNNING state from previous run, resetting to FAILED", st.id)
+            st.status = Status.FAILED
+            st.error = "orphan RUNNING from previous orchestrator run"
+            save_state(st)
+
+
 def supervise(
     tasks: list[Task],
     *,
@@ -361,6 +384,7 @@ def supervise(
     dry_run: bool,
 ) -> dict[str, State]:
     states: dict[str, State] = {t.id: load_state(t.id) for t in tasks}
+    reconcile_orphans(states)
     procs: dict[str, subprocess.Popen[bytes]] = {}
     log_paths: dict[str, Path] = {t.id: LOG_DIR / f"{t.id}.log" for t in tasks}
 
@@ -386,12 +410,19 @@ def supervise(
                 state.last_step = "claude done, running tests"
                 save_state(state)
                 wt = WORKTREE_DIR / tid
-                if run_tests(wt, task.tests, log_paths[tid], dry_run=dry_run):
-                    state.status = Status.PASSED_TESTS
-                    state.last_step = "tests passed"
-                else:
+                try:
+                    tests_passed = run_tests(wt, task.tests, log_paths[tid], dry_run=dry_run)
+                except Exception as exc:  # noqa: BLE001 — supervisor は決して死なせない
+                    log.exception("[%s] run_tests raised", tid)
                     state.status = Status.FAILED
-                    state.error = "tests failed"
+                    state.error = f"run_tests raised: {exc}"
+                else:
+                    if tests_passed:
+                        state.status = Status.PASSED_TESTS
+                        state.last_step = "tests passed"
+                    else:
+                        state.status = Status.FAILED
+                        state.error = "tests failed"
             save_state(state)
             del procs[tid]
 
