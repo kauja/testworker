@@ -142,11 +142,12 @@ export async function runCrawl(
         }
       }
 
-      const snap = monitors.rotate();
-      // monitors.response ハンドラは event loop の次の tick で発火するので、
-      // pending な response が entry を mutate し終わるまで短く待つ。
-      // 完璧ではないが多くの遅延 status / fromCache 更新を取り込める。
+      // 先に少し待って pending な response / requestfinished が現バッファ内の
+      // entry を mutate し終わってから rotate する。 rotate を wait の前に
+      // 呼ぶと、 wait 中に発火した **新規** request イベントが空の新バッファに
+      // 入って次ページ用のフレームに移ってしまう (5th-round 指摘)。
       await new Promise((resolve) => setTimeout(resolve, 50));
+      const snap = monitors.rotate();
 
       const consoleErrCount = snap.console.filter((c) => c.level === 'error').length;
       const networkErrCount = snap.network.filter((n) => n.failed || (n.status ?? 0) >= 400).length;
