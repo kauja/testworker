@@ -4,7 +4,7 @@ import Database from 'better-sqlite3';
 
 export function openReadDb(path: string): Database.Database {
   mkdirSync(dirname(path), { recursive: true });
-  const db = new Database(path, { readonly: false });
-  db.pragma('journal_mode = WAL');
-  return db;
+  // api は read 専用。WAL journal は runner (openDb) 側で設定済みで、
+  // ここで再設定すると readonly フラグと矛盾する。
+  return new Database(path, { readonly: true, fileMustExist: false });
 }
