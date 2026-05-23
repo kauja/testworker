@@ -16,3 +16,15 @@ data/
 
 # Personal decision log (gitignored — local only)
 docs/decisions/
+
+# Orchestrator and auto-resolve runtime artifacts
+.orchestrate/
+.auto-resolve/
+docs/orchestrate-reports/
+
+# Python tooling caches under scripts/
+scripts/.venv/
+scripts/.ruff_cache/
+scripts/.mypy_cache/
+scripts/.pytest_cache/
+scripts/**/__pycache__/

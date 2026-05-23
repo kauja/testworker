@@ -56,6 +56,17 @@ sandbox/
 # 意思決定の記録は個人ログとしてローカル保持（公開リスク回避のため tree には残さない）
 docs/decisions/
 
+# Auto-resolve workflow runtime artifacts (scripts/auto-resolve-one.sh)
+.auto-resolve/
+
+# Python tooling caches (scripts/)
+scripts/.venv/
+scripts/__pycache__/
+scripts/**/__pycache__/
+scripts/.ruff_cache/
+scripts/.mypy_cache/
+scripts/.pytest_cache/
+
 # Local Claude state
 #   追跡対象: .claude/settings.json + .claude/hooks/* + .claude/README.md
 #   （OSS としてエージェント運用を再現可能にするため公開）
