@@ -50,13 +50,23 @@ interface EdgeRow {
 }
 
 function rowToRun(row: RunRow): Run {
+  const raw = JSON.parse(row.options_json);
+  const parsed = CrawlOptions.safeParse(raw);
+  if (!parsed.success) {
+    // schema 進化で古い run の options が現スキーマと不整合になっても
+    // /runs 全体を落とさない。生 JSON を Run 型として通過させ、警告だけ出す。
+    console.warn(
+      `[testworker-api] run ${row.id}: options_json schema mismatch`,
+      parsed.error.flatten(),
+    );
+  }
   return {
     id: row.id,
     startUrl: row.start_url,
     status: row.status as Run['status'],
     startedAt: row.started_at,
     finishedAt: row.finished_at,
-    options: CrawlOptions.parse(JSON.parse(row.options_json)),
+    options: parsed.success ? parsed.data : (raw as CrawlOptions),
     errorMessage: row.error_message,
   };
 }
