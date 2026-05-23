@@ -15,14 +15,22 @@ export function PageDetailPanel({ pageId }: { pageId: string | null }) {
   useEffect(() => {
     if (!pageId) {
       setDetail(null);
+      // 進行中の fetch を cleanup の abort で潰したまま pageId=null になると、
+      // finally の setLoading(false) が aborted ガードでスキップされ loading が
+      // stuck する。早期 return でも明示的にクリアする。
+      setLoading(false);
       return;
     }
     const ctrl = new AbortController();
     setLoading(true);
     fetchPage(pageId, { signal: ctrl.signal })
-      .then((d) => setDetail(d))
+      .then((d) => {
+        if (ctrl.signal.aborted) return;
+        setDetail(d);
+      })
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === 'AbortError') return;
+        if (ctrl.signal.aborted) return;
         setDetail(null);
       })
       .finally(() => {
