@@ -118,6 +118,8 @@ export async function runCrawl(
         await page.goto(task.url, { waitUntil: 'load' });
       } catch (err) {
         console.warn(`[testworker] nav failed: ${task.url} (${(err as Error).message})`);
+        // 失敗 nav 中に発生したイベントが次ページに混ざらないよう破棄する。
+        monitors.rotate();
         continue;
       }
       if (options.waitAfterNavMs > 0) {
@@ -137,30 +139,35 @@ export async function runCrawl(
       }
 
       const snap = monitors.rotate();
-      const consoleErrCount = snap.console.filter((c) => c.level === 'error').length;
-      const networkErrCount = snap.network.filter((n) => n.failed || (n.status ?? 0) >= 400).length;
-      const errCount = snap.errors.length;
+      // 既知 signature の再訪では DB 上の page_state はすでにあるので、
+      // upsert (= 加算) や entry 重複 INSERT を避ける。エッジだけ後段で繋ぐ。
+      if (isNewState) {
+        const consoleErrCount = snap.console.filter((c) => c.level === 'error').length;
+        const networkErrCount = snap.network.filter(
+          (n) => n.failed || (n.status ?? 0) >= 400,
+        ).length;
+        const errCount = snap.errors.length;
 
-      const pageState: PageState = {
-        id: pageStateId,
-        runId,
-        url: sig.url,
-        title: sig.title,
-        signature: sig.signature,
-        depth: task.depth,
-        visitedAt: new Date().toISOString(),
-        screenshotPath,
-        viewport: options.viewport,
-        errorCount: errCount,
-        consoleErrorCount: consoleErrCount,
-        networkErrorCount: networkErrCount,
-      };
-      upsertPageState(db, pageState);
-      insertConsoleBatch(db, applyPageStateId(snap.console, pageStateId));
-      insertNetworkBatch(db, applyPageStateId(snap.network, pageStateId));
-      insertErrorBatch(db, applyPageStateId(snap.errors, pageStateId));
-
-      if (isNewState) pageCount += 1;
+        const pageState: PageState = {
+          id: pageStateId,
+          runId,
+          url: sig.url,
+          title: sig.title,
+          signature: sig.signature,
+          depth: task.depth,
+          visitedAt: new Date().toISOString(),
+          screenshotPath,
+          viewport: options.viewport,
+          errorCount: errCount,
+          consoleErrorCount: consoleErrCount,
+          networkErrorCount: networkErrCount,
+        };
+        upsertPageState(db, pageState);
+        insertConsoleBatch(db, applyPageStateId(snap.console, pageStateId));
+        insertNetworkBatch(db, applyPageStateId(snap.network, pageStateId));
+        insertErrorBatch(db, applyPageStateId(snap.errors, pageStateId));
+        pageCount += 1;
+      }
 
       if (task.fromPageStateId && task.fromPageStateId !== pageStateId) {
         const edge: Edge = {

@@ -96,28 +96,42 @@ export function createMonitors(): PageMonitors {
       });
     });
 
-    page.on('requestfinished', async (req) => {
+    // requestfinished に sync ハンドラで entry を push する。
+    // `await req.response()` を挟むと、その間に rotate() が走った場合に
+    // 古い entry が次ページのバッファに紛れ込む race を起こす（#39）。
+    // status は `response` イベントで遅延更新する。
+    page.on('requestfinished', (req) => {
       const started = requestStart.get(req);
-      let res: Response | null = null;
-      try {
-        res = await req.response();
-      } catch {
-        res = null;
-      }
       networkBuf.push({
         id: newEventId(),
         pageStateId: PLACEHOLDER,
         method: req.method(),
         url: req.url(),
-        status: res?.status() ?? null,
-        statusText: res?.statusText() ?? null,
+        status: null,
+        statusText: null,
         resourceType: req.resourceType(),
         startedAt: new Date(started ?? Date.now()).toISOString(),
         durationMs: started ? Date.now() - started : null,
-        fromCache: Boolean(res && res.fromServiceWorker()) || false,
+        fromCache: false,
         failed: false,
         failureText: null,
       });
+    });
+
+    page.on('response', (res) => {
+      // 同じ URL の最新 entry を遡って status / fromCache を埋める。
+      // rotate 後の到着は別バッファになるので、現在の networkBuf だけ見れば良い。
+      const url = res.url();
+      for (let i = networkBuf.length - 1; i >= 0; i -= 1) {
+        const entry = networkBuf[i];
+        if (entry === undefined) continue;
+        if (entry.url === url && entry.status === null && !entry.failed) {
+          entry.status = res.status();
+          entry.statusText = res.statusText();
+          entry.fromCache = res.fromServiceWorker();
+          break;
+        }
+      }
     });
   }
 
