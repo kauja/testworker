@@ -1,0 +1,96 @@
+# orchestrate.example.yaml — Demo: review 5 dependabot major-bump PRs in parallel.
+#
+# Each task: check out the dependabot branch into its own worktree, ask Claude
+# to review breaking changes, run typecheck/test, then open a follow-up
+# evaluation PR (NOT auto-merge — humans decide whether to merge the bump).
+#
+# Run:
+#   python scripts/orchestrate.py run scripts/orchestrate.example.yaml \
+#       --max-concurrent 2 --dry-run
+#
+# Drop --dry-run when `claude -p` is available and you actually want to invoke it.
+
+plan:
+  - id: review-types-node
+    branch: chore/orch-review/types-node
+    target_pr: 7
+    depends_on: []
+    prompt: |
+      You are reviewing dependabot PR #7 which bumps @types/node from 22.19.19
+      to 25.9.0 across the workspace. Check out origin/dependabot/npm_and_yarn/types-68ebe471cf
+      into this worktree, then:
+        1. Summarize the breaking changes in @types/node 23/24/25 relevant to
+           this monorepo (Node 22 runtime is fixed).
+        2. Run `pnpm install --frozen-lockfile` and `pnpm -r run typecheck`.
+        3. Write `docs/orchestrate-reports/types-node.md` capturing your findings
+           (compatibility risk: low / medium / high, with citations).
+        4. Commit only that report (do not modify @types/node itself).
+      Do NOT run `git push`; the orchestrator handles publishing.
+    tests:
+      - env -u NODE_OPTIONS pnpm install --frozen-lockfile
+      - env -u NODE_OPTIONS pnpm -r run typecheck
+    pr_title: 'chore(deps-review): @types/node 22 → 25 compatibility report'
+    pr_body: |
+      Automated review of dependabot PR #7 produced by `scripts/orchestrate.py`.
+      See `docs/orchestrate-reports/types-node.md` for findings.
+    labels: ['chore', 'area:ci', 'priority:p2']
+
+  - id: review-better-sqlite3
+    branch: chore/orch-review/better-sqlite3
+    target_pr: 9
+    depends_on: []
+    prompt: |
+      Review dependabot PR #9 (better-sqlite3 11 → 12). Compare the v11 → v12
+      changelog, focusing on prepared-statement API, WAL mode behavior, and
+      Node ABI. Write `docs/orchestrate-reports/better-sqlite3.md`. Run typecheck
+      and any package:runner tests. Commit the report only.
+    tests:
+      - env -u NODE_OPTIONS pnpm install --frozen-lockfile
+      - env -u NODE_OPTIONS pnpm --filter @testworker/runner run typecheck
+    pr_title: 'chore(deps-review): better-sqlite3 11 → 12 compatibility report'
+    labels: ['chore', 'area:runner', 'priority:p2']
+
+  - id: review-zod
+    branch: chore/orch-review/zod
+    target_pr: 10
+    depends_on: []
+    prompt: |
+      Review dependabot PR #10 (zod 3 → 4). The shared schemas in
+      `packages/shared/src/schema.ts` are the bedrock of the type system; any
+      breaking API change cascades. Identify migration steps, write
+      `docs/orchestrate-reports/zod.md`. Commit the report only.
+    tests:
+      - env -u NODE_OPTIONS pnpm install --frozen-lockfile
+      - env -u NODE_OPTIONS pnpm -r run typecheck
+    pr_title: 'chore(deps-review): zod 3 → 4 compatibility report'
+    labels: ['chore', 'area:harness', 'priority:p2']
+
+  - id: review-tailwindcss
+    branch: chore/orch-review/tailwindcss
+    target_pr: 13
+    depends_on: []
+    prompt: |
+      Review dependabot PR #13 (tailwindcss 3 → 4). The web package uses
+      Tailwind for the React Flow UI. Identify config migration, breaking class
+      removals, and Vite/Next integration changes. Write
+      `docs/orchestrate-reports/tailwindcss.md`. Run web typecheck and build.
+      Commit the report only.
+    tests:
+      - env -u NODE_OPTIONS pnpm install --frozen-lockfile
+      - env -u NODE_OPTIONS pnpm --filter @testworker/web run typecheck
+    pr_title: 'chore(deps-review): tailwindcss 3 → 4 compatibility report'
+    labels: ['chore', 'area:web', 'priority:p2']
+
+  - id: review-eslint
+    branch: chore/orch-review/eslint
+    target_pr: 14
+    depends_on: []
+    prompt: |
+      Review dependabot PR #14 (eslint 9 → 10). Verify flat-config compatibility,
+      plugin support for `@typescript-eslint`, and Next.js eslint-config. Write
+      `docs/orchestrate-reports/eslint.md`. Commit the report only.
+    tests:
+      - env -u NODE_OPTIONS pnpm install --frozen-lockfile
+      - env -u NODE_OPTIONS pnpm --filter @testworker/web run lint
+    pr_title: 'chore(deps-review): eslint 9 → 10 compatibility report'
+    labels: ['chore', 'area:ci', 'priority:p2']
