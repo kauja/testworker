@@ -73,9 +73,26 @@ function rowToRun(row: RunRow): Run {
       `[testworker-api] run ${row.id}: options_json schema mismatch`,
       parsed.error.flatten(),
     );
-    // 最低限 startUrl + Zod の defaults だけで再構築する。型偽装を避け、
-    // downstream の `options.maxDepth` 等が undefined にならないことを保証する。
-    options = CrawlOptions.parse({ startUrl: row.start_url });
+    // 最低限 startUrl + Zod の defaults だけで再構築する。
+    // CrawlOptions.parse は startUrl が z.string().url() を要求するため、
+    // legacy row で `host.docker.internal:3000` のような scheme なし URL が
+    // 入っているとここで throw する。 二段の try/catch にして最悪でも /runs を
+    // 落とさず手書き defaults でしのぐ。
+    try {
+      options = CrawlOptions.parse({ startUrl: row.start_url });
+    } catch {
+      options = {
+        startUrl: row.start_url,
+        maxDepth: 3,
+        maxPages: 50,
+        sameOriginOnly: true,
+        navTimeoutMs: 15_000,
+        waitAfterNavMs: 500,
+        viewport: { width: 1280, height: 800 },
+        includeUrlPatterns: [],
+        excludeUrlPatterns: [],
+      } as CrawlOptions;
+    }
   }
   return {
     id: row.id,
