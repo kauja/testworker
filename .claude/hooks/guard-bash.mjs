@@ -41,12 +41,17 @@ function splitSegments(text) {
  * の両方を block する。 refs/heads/main / HEAD:main / HEAD:refs/heads/main / +main /
  * 'main' / "main" / --all / --mirror / 引数なしの `git push` を全部弾く。
  */
+// read-only な push (ヘルプ表示や dry-run) は許可。 これらは ref を実際には更新しない。
+const READ_ONLY_PUSH_FLAGS = new Set(['--dry-run', '-n', '--help', '-h']);
+
 function detectMainPush(segment) {
   const m = segment.match(/\bgit\s+push\b\s*(.*)$/);
   if (!m) return false;
   const args = (m[1] ?? '').split(/\s+/).filter(Boolean);
-  // 引数なし / bare push は target が不明 (上流が main の可能性) → block
+  // read-only flag が含まれているなら ref は更新されないので素通り。
+  if (args.some((a) => READ_ONLY_PUSH_FLAGS.has(a))) return false;
   const positional = args.filter((a) => !a.startsWith('-'));
+  // 引数なし / bare push は target が不明 (上流が main の可能性) → block
   if (positional.length === 0) return true;
   for (const a of args) {
     // --mirror / --all は全 ref を push するため target に main を含む
