@@ -1,4 +1,4 @@
-import { createReadStream, statSync } from 'node:fs';
+import { createReadStream, existsSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { Hono } from 'hono';
@@ -10,6 +10,17 @@ import { getGraph, getPageDetail, listRuns } from './queries.js';
 const PORT = Number(process.env.API_PORT ?? 3001);
 const DB_PATH = process.env.DB_PATH ?? './data/db/testworker.sqlite';
 const DATA_DIR = resolve(process.env.DATA_DIR ?? './data');
+
+// `openReadDb` は readonly:true で開くため、 DB ファイルが存在しない初回起動で
+// SQLITE_CANTOPEN を投げて api がクラッシュする。 runner の migrate が先に
+// 走るのが正規フローなので、 ここでは「ファイル不在 = 未マイグレート」を明示
+// メッセージで終了する (5th round critical 2)。
+if (!existsSync(DB_PATH)) {
+  console.error(
+    `[testworker-api] DB not found at ${DB_PATH}. Run \`make migrate\` (or pnpm --filter @testworker/runner run migrate) before starting the api.`,
+  );
+  process.exit(1);
+}
 
 const db = openReadDb(DB_PATH);
 const app = new Hono();
