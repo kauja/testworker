@@ -205,6 +205,9 @@ def test_needs_shell_detection() -> None:
     assert orchestrate._needs_shell("echo hi > /tmp/x") is True
     assert orchestrate._needs_shell("pnpm install --frozen-lockfile") is False
     assert orchestrate._needs_shell("pytest -q") is False
+    # 6R Angle D: glob は argv のままで OK (sh -c に流すと filename injection 経路)
+    assert orchestrate._needs_shell("pytest tests/*.py") is False
+    assert orchestrate._needs_shell("ls ?") is False
 
 
 def test_run_tests_uses_argv_not_shell(tmp_path: Path) -> None:

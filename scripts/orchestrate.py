@@ -306,9 +306,11 @@ def spawn_claude(task: Task, worktree: Path, log_path: Path, dry_run: bool) -> s
     return proc
 
 
-# && や | などの shell 演算子。これらを含む test cmd は shell=False の argv 実行では
-# 意図通りに動かないため、明示的に sh -c 経由で動かす。
-_SHELL_METACHARS = ("&&", "||", "|", ">", "<", ";", "$(", "`", "*", "?")
+# 真の shell control operator のみ拾う。 `*` / `?` のような glob 文字は argv 実行で
+# そのまま渡せば多くの test runner (pytest, jest 等) が内部展開してくれるため、
+# わざわざ `sh -c` に流すと worktree に置かれた攻撃ファイル名 (例: `x;rm.py`) で
+# glob → shell injection を新規に開いてしまう (6R Angle D 指摘)。
+_SHELL_METACHARS = ("&&", "||", "|", ">", "<", ";", "$(", "`")
 
 
 def _needs_shell(cmd: str) -> bool:
