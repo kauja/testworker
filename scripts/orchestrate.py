@@ -168,9 +168,21 @@ def load_state(task_id: str) -> State:
     if not p.exists():
         return State(id=task_id)
     data = json.loads(p.read_text(encoding="utf-8"))
-    data["status"] = Status(data["status"])
-    # Forward-compat: 新版で追加された field を持つ checkpoint を旧版で読むと
-    # State(**data) が TypeError で死ぬ。 known fields だけ取り出して再構築する。
+    # Forward-compat: 新版で追加された Status enum 値が checkpoint に書かれている
+    # 場合、 `Status(...)` は ValueError を投げて load_state ごと死ぬ。 旧版でも
+    # 復旧できるよう PENDING に倒し、 後段の reconcile_orphans で再評価させる。
+    try:
+        status = Status(data["status"])
+    except (ValueError, KeyError):
+        log.warning(
+            "[%s] unknown status %r in checkpoint, resetting to PENDING",
+            task_id,
+            data.get("status"),
+        )
+        status = Status.PENDING
+    data["status"] = status
+    # 新版で追加された field を持つ checkpoint を旧版で読むと State(**data) が
+    # TypeError で死ぬ。 known fields だけ取り出して再構築する。
     known = {f.name for f in dataclasses.fields(State)}
     filtered = {k: v for k, v in data.items() if k in known}
     return State(**filtered)

@@ -262,3 +262,30 @@ def test_load_state_forward_compat_ignores_unknown_fields(
     state = orchestrate.load_state("x")
     assert state.id == "x"
     assert state.status is Status.PENDING
+
+
+def test_load_state_forward_compat_unknown_status_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """新版で追加された Status enum 値を含む checkpoint を旧版が読んでも crash しない。"""
+    monkeypatch.setattr(orchestrate, "STATE_DIR", tmp_path)
+    (tmp_path / "y.json").write_text(
+        json.dumps(
+            {
+                "id": "y",
+                "status": "rate_limited",  # 旧版に存在しない値
+                "attempts": 1,
+                "started_at": None,
+                "finished_at": None,
+                "last_step": "",
+                "log_path": "",
+                "pr_url": "",
+                "session_id": "",
+                "next_attempt_after": None,
+                "error": "",
+            }
+        ),
+        encoding="utf-8",
+    )
+    state = orchestrate.load_state("y")
+    assert state.status is Status.PENDING
