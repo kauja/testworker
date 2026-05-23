@@ -1,5 +1,5 @@
 import { createReadStream, statSync } from 'node:fs';
-import { extname, join, normalize, resolve } from 'node:path';
+import { extname, join, normalize, resolve, sep } from 'node:path';
 import { Readable } from 'node:stream';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -39,7 +39,9 @@ app.get('/pages/:id', (c) => {
 app.get('/assets/*', (c) => {
   const sub = c.req.path.replace(/^\/assets\//, '');
   const abs = normalize(join(DATA_DIR, sub));
-  if (!abs.startsWith(DATA_DIR)) {
+  // prefix-only check は `/srv/data2` のような sibling を許してしまうため、
+  // セパレータ境界 or 完全一致を要求する。
+  if (abs !== DATA_DIR && !abs.startsWith(DATA_DIR + sep)) {
     return c.json({ error: 'forbidden' }, 403);
   }
   try {
