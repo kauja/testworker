@@ -24,15 +24,63 @@ function block(reason) {
   process.exit(2);
 }
 
+/**
+ * `git push ...` のセグメントから「target に main を含むか」を判定する。
+ * refs/heads/main / HEAD:main / HEAD:refs/heads/main / +main / 'main' / "main"
+ * のような表現を全部捕まえる。
+ */
+function detectMainPush(segment) {
+  // 末尾の改行・パイプ前で切る
+  const text = segment.replace(/[|;&].*$/s, '');
+  // git push の引数だけ取り出す
+  const m = text.match(/\bgit\s+push\b\s*(.*)$/);
+  if (!m) return false;
+  const args = (m[1] ?? '').split(/\s+/).filter(Boolean);
+  for (const raw of args) {
+    if (raw.startsWith('-')) continue;
+    const stripped = raw.replace(/^['"]|['"]$/g, '');
+    // colon が含まれる refspec は rhs を target とする
+    const rhs = stripped.includes(':') ? stripped.split(':').pop() : stripped;
+    if (!rhs) continue;
+    const target = rhs.replace(/^\+/, '').replace(/^refs\/heads\//, '');
+    if (target === 'main') return true;
+  }
+  return false;
+}
+
+/**
+ * `git add ...` で「リポルート / カレントディレクトリ丸ごと」を意味する引数を含むか判定。
+ * `.`, `./`, `:/`, `:(top)`, `-A`, `--all`, quoted variants をカバー。
+ */
+function detectAddEverything(segment) {
+  const text = segment.replace(/[|;&].*$/s, '');
+  const m = text.match(/\bgit\s+add\b\s*(.*)$/);
+  if (!m) return false;
+  const args = (m[1] ?? '').split(/\s+/).filter(Boolean);
+  for (const raw of args) {
+    if (raw === '--') break; // 以降は pathspec literal
+    if (raw === '-A' || raw === '--all') return true;
+    if (raw.startsWith('-')) continue;
+    const stripped = raw.replace(/^['"]|['"]$/g, '').trim();
+    if (
+      stripped === '.' ||
+      stripped === './' ||
+      stripped === ':/' ||
+      stripped.startsWith(':(top') ||
+      stripped.startsWith(':/')
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 const RULES = [
   // ---- main ブランチへの直接介入 ----
   {
-    re: /\bgit\s+push\s+(?:[^|;&]*\s+)?origin\s+main\b/,
+    re: /\bgit\s+push\b/,
+    check: (c) => detectMainPush(c),
     why: 'main は保護されている。feat/* ブランチ → PR → auto-merge で進めること。',
-  },
-  {
-    re: /\bgit\s+push\s+(?:[^|;&]*\s+)?HEAD:main\b/,
-    why: 'main への直接 push は禁止。',
   },
   {
     re: /\bgit\s+commit\s+--amend\b/,
@@ -111,9 +159,9 @@ const RULES = [
     why: 'テスト対象アプリ・私的 fixture を testworker リポにコミットしてはならない。',
   },
   {
-    // 単独の `.`（直後が空白か行末）にのみマッチ。`.prettierignore` 等のドット始まりファイル名は誤検出しない。
-    re: /\bgit\s+add\s+(?:-A\b|--all\b|\.(?=\s|$))/,
-    why: 'git add -A / . は禁止（巻き込み事故防止）。明示的にファイル指定すること。',
+    re: /\bgit\s+add\b/,
+    check: (c) => detectAddEverything(c),
+    why: 'git add で「リポルート / カレントディレクトリ丸ごと」相当 (-A / --all / . / ./ / :/ / :(top) など) は禁止。明示的にファイル指定すること。',
   },
   {
     re: /\bcurl\s+[^|;&]*\|\s*(?:sh|bash)\b/,
@@ -126,7 +174,9 @@ const RULES = [
 ];
 
 for (const r of RULES) {
-  if (r.re.test(cmd)) block(r.why);
+  if (!r.re.test(cmd)) continue;
+  if (r.check && !r.check(cmd)) continue;
+  block(r.why);
 }
 
 process.exit(0);
