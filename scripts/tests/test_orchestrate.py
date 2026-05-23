@@ -230,3 +230,35 @@ def test_run_tests_parse_error_is_returned_not_raised(tmp_path: Path) -> None:
 def test_backoff_until_is_removed() -> None:
     """Dead code with a wrong return shape was deleted; importing it must fail."""
     assert not hasattr(orchestrate, "backoff_until")
+
+
+def test_load_state_forward_compat_ignores_unknown_fields(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """新版で追加された field を含む checkpoint を旧版で読んでも TypeError にしない。"""
+    monkeypatch.setattr(orchestrate, "STATE_DIR", tmp_path)
+    (tmp_path / "x.json").write_text(
+        json.dumps(
+            {
+                "id": "x",
+                "status": "pending",
+                "attempts": 0,
+                "started_at": None,
+                "finished_at": None,
+                "last_step": "",
+                "log_path": "",
+                "pr_url": "",
+                "session_id": "",
+                "next_attempt_after": None,
+                "error": "",
+                # 未来追加されたであろう未知の field
+                "future_extra_metric": 42,
+                "another_unknown": {"nested": True},
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    state = orchestrate.load_state("x")
+    assert state.id == "x"
+    assert state.status is Status.PENDING
