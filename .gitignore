@@ -60,7 +60,10 @@ docs/decisions/
 .orchestrate/
 docs/orchestrate-reports/
 
-# Python tooling for scripts/
+# Auto-resolve workflow runtime artifacts (scripts/auto-resolve-one.sh)
+.auto-resolve/
+
+# Python tooling caches (scripts/)
 scripts/.venv/
 scripts/__pycache__/
 scripts/**/__pycache__/

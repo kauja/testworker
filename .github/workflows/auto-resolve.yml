@@ -1,0 +1,134 @@
+name: auto-resolve
+
+# Autonomous issue resolution pipeline (#31).
+#
+# Every 6 hours (or on manual dispatch):
+#   1. Fetch open issues labeled `autonomous-ok`, sorted by priority (p0 → p1 → p2)
+#   2. For each (up to `limit`, default 3):
+#      a. Create a branch, ask `claude -p` to implement the issue
+#      b. Run scripts/check-pr-safety.sh (denylist + test-required gates)
+#      c. Push, open PR with `Closes #N`
+#      d. Wait for CI; on failure, hand the logs back to Claude for one fix pass
+#      e. Auto-merge once CI is green
+#      f. Post a summary comment on the issue
+#
+# Safety:
+#   - Denylist files (auth/, payments/, *migration*, .env*, .github/workflows/*)
+#     never get touched. If Claude tries, the PR is converted to draft and tagged
+#     for human review.
+#   - New code without test coverage blocks the PR (PR stays open as draft).
+#   - Per-session tool-use budget (configured in CLAUDE.md context).
+#   - workflow_dispatch supports `dry_run: true` for safe rehearsal.
+
+on:
+  schedule:
+    - cron: '0 */6 * * *' # every 6h UTC
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Max issues to process per run'
+        required: false
+        default: '3'
+        type: string
+      dry_run:
+        description: 'Dry-run (no claude invocation, no PR opened)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['true', 'false']
+      issue_numbers:
+        description: 'Comma-separated issue numbers to target (overrides label query)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: auto-resolve
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve eligible issues
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      LIMIT: ${{ inputs.limit || '3' }}
+      DRY_RUN: ${{ inputs.dry_run || 'false' }}
+      ISSUE_OVERRIDE: ${{ inputs.issue_numbers || '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Sanity — required secrets present
+        run: |
+          if [ -z "${ANTHROPIC_API_KEY}" ] && [ "${DRY_RUN}" != "true" ]; then
+            echo "::error::ANTHROPIC_API_KEY secret is missing and DRY_RUN is false"
+            exit 1
+          fi
+
+      - name: Configure git identity
+        run: |
+          git config user.name  'auto-resolve[bot]'
+          git config user.email 'auto-resolve@users.noreply.github.com'
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.0
+
+      - name: Install repo deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Claude Code CLI
+        if: env.DRY_RUN != 'true'
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Fetch eligible issues
+        id: fetch
+        run: |
+          if [ -n "${ISSUE_OVERRIDE}" ]; then
+            # Manual override path: use the explicit numbers
+            echo "${ISSUE_OVERRIDE}" | tr ',' '\n' | sed 's/[[:space:]]//g' \
+              | awk 'NF>0' > issues.txt
+          else
+            gh issue list \
+              --label autonomous-ok \
+              --state open \
+              --limit 30 \
+              --json number,title,labels \
+              --jq '[.[] | {n: .number, p: ([.labels[] | select(.name | startswith("priority:")) | .name][0] // "priority:p2")}]
+                    | sort_by(.p) | .[].n' > issues.txt
+          fi
+          head -n "${LIMIT}" issues.txt > picked.txt
+          echo "picked=$(paste -sd, picked.txt)" >> "$GITHUB_OUTPUT"
+          echo "count=$(wc -l < picked.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
+          echo "Picked issues:"; cat picked.txt
+
+      - name: Resolve each picked issue
+        if: steps.fetch.outputs.count != '0'
+        run: |
+          set -u
+          while read -r ISSUE; do
+            [ -z "${ISSUE}" ] && continue
+            echo "::group::Issue #${ISSUE}"
+            scripts/auto-resolve-one.sh "${ISSUE}" || {
+              echo "::warning::Issue #${ISSUE} failed; continuing"
+              gh issue comment "${ISSUE}" --body "auto-resolve: failed during this run. See workflow logs ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}."
+            }
+            echo "::endgroup::"
+          done < picked.txt
