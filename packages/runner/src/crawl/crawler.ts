@@ -14,6 +14,7 @@ import {
 import type { Db } from '../db/client.js';
 import {
   findPageStateBySignature,
+  incrementPageStateCounters,
   insertConsoleBatch,
   insertEdge,
   insertErrorBatch,
@@ -131,23 +132,27 @@ export async function runCrawl(
       const pageStateId = exists?.id ?? newPageStateId();
       const isNewState = !exists;
       const screenshotPath = join('runs', runId, 'screenshots', `${pageStateId}.png`);
-      const absScreenshot = join(dataDir, screenshotPath);
-      try {
-        await page.screenshot({ path: absScreenshot, fullPage: false });
-      } catch (err) {
-        console.warn(`[testworker] screenshot failed: ${(err as Error).message}`);
+      // 再訪時に既存スクリーンショットを破壊しないよう、新規 state のときだけ撮影する。
+      if (isNewState) {
+        const absScreenshot = join(dataDir, screenshotPath);
+        try {
+          await page.screenshot({ path: absScreenshot, fullPage: false });
+        } catch (err) {
+          console.warn(`[testworker] screenshot failed: ${(err as Error).message}`);
+        }
       }
 
       const snap = monitors.rotate();
-      // 既知 signature の再訪では DB 上の page_state はすでにあるので、
-      // upsert (= 加算) や entry 重複 INSERT を避ける。エッジだけ後段で繋ぐ。
-      if (isNewState) {
-        const consoleErrCount = snap.console.filter((c) => c.level === 'error').length;
-        const networkErrCount = snap.network.filter(
-          (n) => n.failed || (n.status ?? 0) >= 400,
-        ).length;
-        const errCount = snap.errors.length;
+      // monitors.response ハンドラは event loop の次の tick で発火するので、
+      // pending な response が entry を mutate し終わるまで短く待つ。
+      // 完璧ではないが多くの遅延 status / fromCache 更新を取り込める。
+      await new Promise((resolve) => setTimeout(resolve, 50));
 
+      const consoleErrCount = snap.console.filter((c) => c.level === 'error').length;
+      const networkErrCount = snap.network.filter((n) => n.failed || (n.status ?? 0) >= 400).length;
+      const errCount = snap.errors.length;
+
+      if (isNewState) {
         const pageState: PageState = {
           id: pageStateId,
           runId,
@@ -163,11 +168,15 @@ export async function runCrawl(
           networkErrorCount: networkErrCount,
         };
         upsertPageState(db, pageState);
-        insertConsoleBatch(db, applyPageStateId(snap.console, pageStateId));
-        insertNetworkBatch(db, applyPageStateId(snap.network, pageStateId));
-        insertErrorBatch(db, applyPageStateId(snap.errors, pageStateId));
         pageCount += 1;
+      } else {
+        // 再訪時は新規 events を記録しつつ counter のみ増分する（screenshot や title は据え置き）。
+        incrementPageStateCounters(db, pageStateId, errCount, consoleErrCount, networkErrCount);
       }
+      // events はどちらのケースでも記録する（情報を捨てない）。
+      insertConsoleBatch(db, applyPageStateId(snap.console, pageStateId));
+      insertNetworkBatch(db, applyPageStateId(snap.network, pageStateId));
+      insertErrorBatch(db, applyPageStateId(snap.errors, pageStateId));
 
       if (task.fromPageStateId && task.fromPageStateId !== pageStateId) {
         const edge: Edge = {

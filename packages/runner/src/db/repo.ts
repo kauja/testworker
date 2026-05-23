@@ -78,6 +78,28 @@ export function findPageStateBySignature(
   return row;
 }
 
+/**
+ * 再訪時に snap が新たに含むイベント数だけ page_states の counter を増分する。
+ * 0 件のときは UPDATE をスキップする。
+ */
+export function incrementPageStateCounters(
+  db: Db,
+  pageStateId: string,
+  errorCount: number,
+  consoleErrorCount: number,
+  networkErrorCount: number,
+): void {
+  if (errorCount === 0 && consoleErrorCount === 0 && networkErrorCount === 0) return;
+  const stmt = db.$sqlite.prepare(`
+    UPDATE page_states
+       SET error_count = error_count + ?,
+           console_error_count = console_error_count + ?,
+           network_error_count = network_error_count + ?
+     WHERE id = ?
+  `);
+  stmt.run(errorCount, consoleErrorCount, networkErrorCount, pageStateId);
+}
+
 export function insertEdge(db: Db, edge: Edge): void {
   const stmt = db.$sqlite.prepare(`
     INSERT OR IGNORE INTO edges (

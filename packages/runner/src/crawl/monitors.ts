@@ -30,6 +30,10 @@ export function createMonitors(): PageMonitors {
   const PLACEHOLDER = '__current__';
 
   const requestStart = new WeakMap<Request, number>();
+  // Request → 直近 networkBuf に push した entry の参照。
+  // `response` イベントで URL 文字列で逆引きすると、rotate 後や同一 URL の
+  // 連続リクエストで取り違える。Request オブジェクトをキーにすれば確実。
+  const entryByRequest = new WeakMap<Request, NetworkEntry>();
 
   function attach(page: Page): void {
     page.on('console', (msg) => {
@@ -102,7 +106,7 @@ export function createMonitors(): PageMonitors {
     // status は `response` イベントで遅延更新する。
     page.on('requestfinished', (req) => {
       const started = requestStart.get(req);
-      networkBuf.push({
+      const entry: NetworkEntry = {
         id: newEventId(),
         pageStateId: PLACEHOLDER,
         method: req.method(),
@@ -115,23 +119,22 @@ export function createMonitors(): PageMonitors {
         fromCache: false,
         failed: false,
         failureText: null,
-      });
+      };
+      networkBuf.push(entry);
+      entryByRequest.set(req, entry);
     });
 
     page.on('response', (res) => {
-      // 同じ URL の最新 entry を遡って status / fromCache を埋める。
-      // rotate 後の到着は別バッファになるので、現在の networkBuf だけ見れば良い。
-      const url = res.url();
-      for (let i = networkBuf.length - 1; i >= 0; i -= 1) {
-        const entry = networkBuf[i];
-        if (entry === undefined) continue;
-        if (entry.url === url && entry.status === null && !entry.failed) {
-          entry.status = res.status();
-          entry.statusText = res.statusText();
-          entry.fromCache = res.fromServiceWorker();
-          break;
-        }
-      }
+      // WeakMap で Request → 既に push 済みの entry 参照を引く。
+      // rotate でバッファが入れ替わっても entry オブジェクトは同じものを mutate するので、
+      // crawler 側で snap.network を mutating な applyPageStateId 経由で insert する限り、
+      // 遅延 status / fromCache が DB に反映される。
+      const req = res.request();
+      const entry = entryByRequest.get(req);
+      if (entry === undefined) return;
+      entry.status = res.status();
+      entry.statusText = res.statusText();
+      entry.fromCache = res.fromServiceWorker();
     });
   }
 
@@ -176,5 +179,8 @@ export function applyPageStateId<T extends { pageStateId: string }>(
   items: T[],
   pageStateId: string,
 ): T[] {
-  return items.map((item) => ({ ...item, pageStateId }));
+  // mutating: monitors の response 後追い更新で entry オブジェクトを直接書き換える設計のため、
+  // ここで shallow-copy するとその更新が DB insert に反映されなくなる。
+  for (const item of items) item.pageStateId = pageStateId;
+  return items;
 }
