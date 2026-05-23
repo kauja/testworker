@@ -155,21 +155,56 @@ def test_reconcile_orphans_resets_running_to_failed(
 
     reconcile_orphans should flip RUNNING → FAILED so supervise() can either
     retry (within max_attempts) or move on, instead of being starved forever.
+    Also: the interrupted attempt should be refunded (attempts -= 1) and
+    next_attempt_after cleared so the retry isn't blocked by stale backoff.
     """
     monkeypatch.setattr(orchestrate, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(orchestrate, "WORKTREE_DIR", tmp_path / "wt")
     states = {
-        "a": State(id="a", status=Status.RUNNING, attempts=1),
+        "a": State(
+            id="a",
+            status=Status.RUNNING,
+            attempts=2,
+            next_attempt_after="2030-01-01T00:00:00+00:00",
+        ),
         "b": State(id="b", status=Status.PENDING),
         "c": State(id="c", status=Status.PASSED_TESTS),
     }
     orchestrate.reconcile_orphans(states)
     assert states["a"].status is Status.FAILED
     assert "orphan" in states["a"].error.lower()
+    assert states["a"].attempts == 1, "interrupted attempt must be refunded"
+    assert states["a"].next_attempt_after is None, "stale backoff must be cleared"
     assert states["b"].status is Status.PENDING
     assert states["c"].status is Status.PASSED_TESTS
     # checkpoint should be persisted for the reset
     reloaded = orchestrate.load_state("a")
     assert reloaded.status is Status.FAILED
+    assert reloaded.attempts == 1
+
+
+def test_run_tests_uses_sh_c_for_shell_metachar(tmp_path: Path) -> None:
+    """`&&` / `||` / `>` のような shell 演算子は sh -c 経由で動く必要がある。"""
+    log_path = tmp_path / "t.log"
+    out_file = tmp_path / "out.txt"
+    # &&: 両方 success
+    assert (
+        orchestrate.run_tests(tmp_path, [f"true && echo ok > {out_file}"], log_path) is True
+    )
+    assert out_file.exists() and out_file.read_text().strip() == "ok"
+    out_file.unlink()
+    # ||: 左失敗→右で fallback
+    assert (
+        orchestrate.run_tests(tmp_path, [f"false || echo fallback > {out_file}"], log_path) is True
+    )
+    assert out_file.read_text().strip() == "fallback"
+
+
+def test_needs_shell_detection() -> None:
+    assert orchestrate._needs_shell("pnpm test && pnpm typecheck") is True
+    assert orchestrate._needs_shell("echo hi > /tmp/x") is True
+    assert orchestrate._needs_shell("pnpm install --frozen-lockfile") is False
+    assert orchestrate._needs_shell("pytest -q") is False
 
 
 def test_run_tests_uses_argv_not_shell(tmp_path: Path) -> None:

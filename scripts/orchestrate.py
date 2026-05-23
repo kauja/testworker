@@ -266,12 +266,22 @@ def spawn_claude(task: Task, worktree: Path, log_path: Path, dry_run: bool) -> s
     return proc
 
 
+# && や | などの shell 演算子。これらを含む test cmd は shell=False の argv 実行では
+# 意図通りに動かないため、明示的に sh -c 経由で動かす。
+_SHELL_METACHARS = ("&&", "||", "|", ">", "<", ";", "$(", "`", "*", "?")
+
+
+def _needs_shell(cmd: str) -> bool:
+    return any(m in cmd for m in _SHELL_METACHARS)
+
+
 def run_tests(worktree: Path, tests: list[str], log_path: Path, dry_run: bool = False) -> bool:
     """Run each test command in the worktree. Returns True if all pass.
     In dry_run mode, log the commands without executing and return True.
 
-    各 test エントリは shlex.split() で argv に分解して shell=False で実行する。
-    && や | のような shell 演算子を使いたい場合は明示的に `sh -c '...'` を書くこと。
+    `&&` / `|` / `>` / `;` などの shell 演算子を含む文字列は `sh -c` 経由で実行する
+    （shell=True を回避しつつ、既存 plan の互換を保つ）。それ以外は shlex.split()
+    で argv に分解して shell=False で実行する。
     """
     if not tests:
         return True
@@ -282,14 +292,18 @@ def run_tests(worktree: Path, tests: list[str], log_path: Path, dry_run: bool = 
                 fh.write(f"[tests] (dry-run) $ {cmd}\n".encode())
                 continue
             fh.write(f"[tests] $ {cmd}\n".encode())
-            try:
-                argv = shlex.split(cmd)
-            except ValueError as exc:
-                fh.write(f"[tests] PARSE ERROR: {exc}\n".encode())
-                return False
-            if not argv:
-                fh.write(b"[tests] empty command, skipping\n")
-                continue
+            if _needs_shell(cmd):
+                fh.write(b"[tests] (using sh -c due to shell metachar)\n")
+                argv: list[str] = ["sh", "-c", cmd]
+            else:
+                try:
+                    argv = shlex.split(cmd)
+                except ValueError as exc:
+                    fh.write(f"[tests] PARSE ERROR: {exc}\n".encode())
+                    return False
+                if not argv:
+                    fh.write(b"[tests] empty command, skipping\n")
+                    continue
             res = subprocess.run(
                 argv,
                 cwd=worktree,
@@ -367,12 +381,24 @@ def reconcile_orphans(states: dict[str, State]) -> None:
     """前回のクラッシュで RUNNING のまま残った state を FAILED に倒す。
 
     これをしないと supervise() の running カウンタが永続的に max_concurrent を超え、
-    新規 spawn できず terminal 判定も成立せず無限ループに陥る。"""
+    新規 spawn できず terminal 判定も成立せず無限ループに陥る。
+
+    Orphan は「試行が完了しなかった」ので attempts を 1 つ戻し、backoff も解除する。
+    残った worktree も remove して、ensure_worktree が clean に作り直せるようにする。
+    """
     for st in states.values():
         if st.status == Status.RUNNING:
             log.warning("[%s] orphan RUNNING state from previous run, resetting to FAILED", st.id)
             st.status = Status.FAILED
             st.error = "orphan RUNNING from previous orchestrator run"
+            # 試行は途中で中断されたので 1 attempt 分は消費していない扱いに戻す。
+            # max_attempts に達して permanent failed になるのを防ぐ。
+            if st.attempts > 0:
+                st.attempts -= 1
+            # 古い backoff スケジュールを引きずらない。
+            st.next_attempt_after = None
+            # 半端な worktree を片付けて、再 spawn 時に clean に作り直せるようにする。
+            remove_worktree(st.id)
             save_state(st)
 
 
