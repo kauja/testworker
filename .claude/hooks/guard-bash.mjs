@@ -25,21 +25,37 @@ function block(reason) {
 }
 
 /**
- * `git push ...` のセグメントから「target に main を含むか」を判定する。
- * refs/heads/main / HEAD:main / HEAD:refs/heads/main / +main / 'main' / "main"
- * のような表現を全部捕まえる。
+ * cmd を `;` `&&` `||` `|` などで区切って各セグメントの配列にする。
+ * 第 1 ラウンドの実装は最初の区切りで truncate していたため、
+ * `noop ; git push origin main` のような後続セグメントを検査できなかった。
+ */
+function splitSegments(text) {
+  return text
+    .split(/(?:&&|\|\||;|\||&)/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * `git push ...` のセグメントから「main を target に含む」「unverifiable な bare push」
+ * の両方を block する。 refs/heads/main / HEAD:main / HEAD:refs/heads/main / +main /
+ * 'main' / "main" / --all / --mirror / 引数なしの `git push` を全部弾く。
  */
 function detectMainPush(segment) {
-  // 末尾の改行・パイプ前で切る
-  const text = segment.replace(/[|;&].*$/s, '');
-  // git push の引数だけ取り出す
-  const m = text.match(/\bgit\s+push\b\s*(.*)$/);
+  const m = segment.match(/\bgit\s+push\b\s*(.*)$/);
   if (!m) return false;
   const args = (m[1] ?? '').split(/\s+/).filter(Boolean);
-  for (const raw of args) {
-    if (raw.startsWith('-')) continue;
+  // 引数なし / bare push は target が不明 (上流が main の可能性) → block
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) return true;
+  for (const a of args) {
+    // --mirror / --all は全 ref を push するため target に main を含む
+    if (a === '--mirror' || a === '--all') return true;
+  }
+  for (const raw of positional) {
     const stripped = raw.replace(/^['"]|['"]$/g, '');
-    // colon が含まれる refspec は rhs を target とする
+    // `HEAD` 単独は default 上流（main の可能性）を指すので block
+    if (stripped === 'HEAD') return true;
     const rhs = stripped.includes(':') ? stripped.split(':').pop() : stripped;
     if (!rhs) continue;
     const target = rhs.replace(/^\+/, '').replace(/^refs\/heads\//, '');
@@ -50,16 +66,19 @@ function detectMainPush(segment) {
 
 /**
  * `git add ...` で「リポルート / カレントディレクトリ丸ごと」を意味する引数を含むか判定。
- * `.`, `./`, `:/`, `:(top)`, `-A`, `--all`, quoted variants をカバー。
+ * `.`, `./`, `:/`, `:(top)`, `-A`, `--all`, `-u`, `--update`, quoted variants をカバー。
  */
 function detectAddEverything(segment) {
-  const text = segment.replace(/[|;&].*$/s, '');
-  const m = text.match(/\bgit\s+add\b\s*(.*)$/);
+  const m = segment.match(/\bgit\s+add\b\s*(.*)$/);
   if (!m) return false;
   const args = (m[1] ?? '').split(/\s+/).filter(Boolean);
   for (const raw of args) {
     if (raw === '--') break; // 以降は pathspec literal
     if (raw === '-A' || raw === '--all') return true;
+    // `-u` / `--update` は tracked ファイル全体を stage する
+    if (raw === '-u' || raw === '--update') return true;
+    // `--pathspec-from-file=...` は任意リストを stage できる
+    if (raw.startsWith('--pathspec-from-file')) return true;
     if (raw.startsWith('-')) continue;
     const stripped = raw.replace(/^['"]|['"]$/g, '').trim();
     if (
@@ -75,16 +94,45 @@ function detectAddEverything(segment) {
   return false;
 }
 
+/** `git commit -a` / `-am` で全 tracked file を一括 stage するのを block。 */
+function detectCommitAll(segment) {
+  const m = segment.match(/\bgit\s+commit\b\s*(.*)$/);
+  if (!m) return false;
+  const args = (m[1] ?? '').split(/\s+/).filter(Boolean);
+  for (const raw of args) {
+    if (raw === '--all') return true;
+    // `-a` / `-am` / `-amS` のような結合フラグ。`-`+ alpha のみで、`a` を含む
+    if (/^-[A-Za-z]*a[A-Za-z]*$/.test(raw)) return true;
+  }
+  return false;
+}
+
+/**
+ * 各 RULE.check は cmd 全体ではなく、splitSegments で得た 1 セグメントを受け取って
+ * true を返したら block する。これで `noop ; danger` の後続セグメントも検査できる。
+ */
+function anySegmentMatches(c, check) {
+  for (const seg of splitSegments(c)) {
+    if (check(seg)) return true;
+  }
+  return false;
+}
+
 const RULES = [
   // ---- main ブランチへの直接介入 ----
   {
     re: /\bgit\s+push\b/,
-    check: (c) => detectMainPush(c),
-    why: 'main は保護されている。feat/* ブランチ → PR → auto-merge で進めること。',
+    check: (c) => anySegmentMatches(c, detectMainPush),
+    why: 'main は保護されている。feat/* ブランチ → PR → auto-merge で進めること（target が不明な bare push, --all, --mirror も含む）。',
   },
   {
     re: /\bgit\s+commit\s+--amend\b/,
     why: 'amend はハーネス方針で禁止（こまめな commit が原則）。新しい commit を積むこと。',
+  },
+  {
+    re: /\bgit\s+commit\b/,
+    check: (c) => anySegmentMatches(c, detectCommitAll),
+    why: 'git commit -a / --all は禁止（巻き込み事故・add ガード回避）。明示的に git add してから commit すること。',
   },
   {
     re: /\bgit\s+rebase\s+(?:-i|--interactive|--root)\b/,
@@ -160,8 +208,8 @@ const RULES = [
   },
   {
     re: /\bgit\s+add\b/,
-    check: (c) => detectAddEverything(c),
-    why: 'git add で「リポルート / カレントディレクトリ丸ごと」相当 (-A / --all / . / ./ / :/ / :(top) など) は禁止。明示的にファイル指定すること。',
+    check: (c) => anySegmentMatches(c, detectAddEverything),
+    why: 'git add で「リポルート / カレントディレクトリ丸ごと」相当 (-A / --all / -u / --update / . / ./ / :/ / :(top) / --pathspec-from-file など) は禁止。明示的にファイル指定すること。',
   },
   {
     re: /\bcurl\s+[^|;&]*\|\s*(?:sh|bash)\b/,
