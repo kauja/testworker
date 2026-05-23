@@ -32,6 +32,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 意思決定の歴史的経緯は `docs/decisions/`（gitignore 済み、ローカル個人ログ）に保管。
 - ハーネスで止められたら、抜け道を探さず方針を見直す（`.claude/settings.json` + `.claude/hooks/*` が物理ガード）。
 
+## Workflow Rules
+
+- **multi-round refactor / 連続 PR**: 1 PR ずつ CI green を確認してから次 PR を開く。連続 push で main を不安定化させない（必要なら手元で `git fetch origin main && git merge origin/main` で追従してから新 PR）
+- **parallel worker subagent**: 並列度は cap（default 2、最大 3）。fan-out 前に対象スコープ（service / package / file 群）の **完全な一覧** をユーザに提示・確認してから起動する（漏れて後追い再実行を避ける）
+- **rate-limit 検知**: worker が API rate-limit に当たったら、当該 worker は backoff（30s → 60s → 120s 指数）、checkpoint を保存してから再開。supervisor は失敗 worker を 1 回まで再起動し、2 回目以降は人間に通知
+- **batch commit**: 関連する変更は 1 commit に束ね、commit message に「何を / なぜ」を書く。`--amend` 禁止、新規 commit を積む
+
 ## Architecture（読まないと迷う部分のみ）
 
 pnpm workspaces のモノレポ。データは SQLite + ローカルファイル。3 プロセス構成。
@@ -102,6 +109,32 @@ pnpm -r run typecheck                # 全パッケージ型チェック
 - runner は副作用 (DB / FS / Browser) の境界を `crawl/` 配下に集約、`db/repo.ts` 以外で `db.$sqlite.prepare` を呼ばない
 - web は dark theme 固定（`globals.css` で `color-scheme: dark`）、アクセントカラーは `accent` (#7c9cff)、エラーは `bad` (#ff7a8a)
 - スクリーンショット URL は必ず `assetUrl(page.screenshotPath)` 経由で生成（生成ロジックを 1 箇所に集約）
+
+## Code Style Conventions
+
+- **module-level 定数を先頭で宣言**: スタイル定数 / config 値 / base URL / 正規表現などは file 先頭（import 直後）でまとめて宣言し、関数本体で参照する。「使う前に宣言」を徹底（lint 由来の cascade 修正を避ける）
+- **レイヤ越境の事前確認**: 関数を別レイヤ（handlers ↔ middleware、runner ↔ api、shared ↔ 各 package）に移す前に、import 方向と依存グラフを確認する（package.json / tsconfig path / 既存 import）。逆方向依存を作らない
+- **noqa / eslint-disable は最終物理行に**: 複数行に跨る式（Python の multi-line f-string、TypeScript の chained call）に lint 抑制コメントを付ける場合、**最終物理行**に置く（中間行に置くと無視される）
+- **TypeScript**: `strict` + `noUncheckedIndexedAccess` + `verbatimModuleSyntax` 前提。`any` 禁止（やむを得ない場合は `unknown` + narrow）
+- **エラー処理**: throw する場合は型情報を残し、catch 側で `instanceof Error` で narrow
+
+## Testing & Validation
+
+**「done」と言う前に必ず通すゲート**（自動 hook で stop-quality-check.mjs が typecheck を流すが、それだけでは不十分）:
+
+- `pnpm -r run typecheck` — 4 package すべて緑
+- `pnpm exec prettier --check .` — フォーマット完走（差分なし）
+- 変更があった package の test（追加していれば）
+- **Python を持つツール群**（将来 `scripts/orchestrate.py` 等）: `ruff check` / `mypy` が 0 件、必要なら `pytest`
+- multi-file 変更 / refactor の後は **全 suite を回す**（type / format / test）。1 file 変更でも、import 元が他 package にあれば波及するので `-r` を必ず付ける
+
+セルフチェック手順:
+
+```bash
+pnpm -r run typecheck && pnpm exec prettier --check . && echo OK
+```
+
+CI が失敗した場合、必ずローカルで再現してから fix を push する（盲打ち禁止）。
 
 ## OSS / Contribution
 
