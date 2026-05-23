@@ -131,6 +131,11 @@ const RULES = [
     why: 'main は保護されている。feat/* ブランチ → PR → auto-merge で進めること（target が不明な bare push, --all, --mirror も含む）。',
   },
   {
+    // `git -c branch.<X>.merge=refs/heads/main push ...` で refspec を上書きする経路
+    re: /\bgit\s+-c\s+\S*\.merge\s*=\s*(?:refs\/heads\/)?main\b/,
+    why: 'git -c で merge refspec を main に上書きしての push は禁止（保護回避経路）。',
+  },
+  {
     re: /\bgit\s+commit\s+--amend\b/,
     why: 'amend はハーネス方針で禁止（こまめな commit が原則）。新しい commit を積むこと。',
   },
