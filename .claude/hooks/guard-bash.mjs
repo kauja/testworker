@@ -30,9 +30,19 @@ function block(reason) {
  * `noop ; git push origin main` のような後続セグメントを検査できなかった。
  */
 function splitSegments(text) {
+  // subshell `$(...)` / backtick / 改行も区切り扱いにする。
+  // 例: `echo $(git push origin main)` を 1 segment のままにすると、
+  //   `git push origin main)` の trailing `)` で detectMainPush が
+  //   target を `main)` と誤判定し block を素通りする。
+  // closing paren / backtick の残骸は per-segment で末尾を strip する。
   return text
-    .split(/(?:&&|\|\||;|\||&)/)
-    .map((s) => s.trim())
+    .split(/(?:&&|\|\||;|\||&|\$\(|`|\n|\r)/)
+    .map((s) =>
+      s
+        .trim()
+        .replace(/[)`]+$/, '')
+        .trim(),
+    )
     .filter(Boolean);
 }
 
