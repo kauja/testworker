@@ -17,12 +17,41 @@
 import { readFileSync } from 'node:fs';
 
 const payload = JSON.parse(readFileSync(0, 'utf-8'));
-const cmd = String(payload?.tool_input?.command ?? '');
+const rawCmd = String(payload?.tool_input?.command ?? '');
 
 function block(reason) {
-  process.stderr.write(`[harness] BLOCKED: ${reason}\nCommand:\n  ${cmd}\n`);
+  process.stderr.write(`[harness] BLOCKED: ${reason}\nCommand:\n  ${rawCmd}\n`);
   process.exit(2);
 }
+
+/**
+ * `git -C <path>` `git --no-pager` `git -c key=val` などの global option を
+ * subcommand の直前から除去し、 既存 rule (`\bgit\s+push\b` 等) が
+ * subcommand を捕まえられるよう正規化する。 これがないと
+ *   git -C /tmp push origin main
+ *   git --no-pager push origin main
+ *   git -c safe.directory=/tmp push --force origin main
+ * のような global option 経由で全 rule を素通りする (7R critical)。
+ *
+ * パターン:
+ *   - `-C <path>` / `-c <key=val>`  : space-separated 2 token を 1 単位
+ *   - `--git-dir=<path>` / `--work-tree=<path>` / `--no-pager` / `--exec-path=` 等
+ *   - `-P` / `-p` / `-v` などの 1 文字 flag
+ *   - `--namespace=<x>` 等の `--key=value` 形式
+ */
+function normalizeGit(text) {
+  return text.replace(
+    /\bgit((?:\s+(?:-[Cc]\s+\S+|-[A-Za-z]+|--[A-Za-z][A-Za-z0-9-]*(?:=\S+)?))+)\s+/g,
+    (match, opts) => {
+      // main を含む option (例: `-c branch.X.merge=refs/heads/main`) は別 rule で
+      // 検出させるため preserve。 strip すると refspec override bypass が通る。
+      if (/\bmain\b|refs\/heads\/main/.test(opts)) return match;
+      return 'git ';
+    },
+  );
+}
+
+const cmd = normalizeGit(rawCmd);
 
 /**
  * cmd を `;` `&&` `||` `|` などで区切って各セグメントの配列にする。
