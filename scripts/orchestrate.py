@@ -455,6 +455,9 @@ def supervise(
     reconcile_orphans(states)
     procs: dict[str, subprocess.Popen[bytes]] = {}
     log_paths: dict[str, Path] = {t.id: LOG_DIR / f"{t.id}.log" for t in tasks}
+    # procs / states を参照できる位置で signal handler を再 install する。
+    # cmd_run 側の install_signal_handlers(None) は古い実装の名残で、 ここで上書きする。
+    install_signal_handlers(procs, states)
 
     def terminal(s: Status) -> bool:
         return s in (Status.PASSED_TESTS, Status.PR_OPENED, Status.FAILED, Status.SKIPPED)
@@ -549,9 +552,49 @@ def supervise(
     return states
 
 
-def install_signal_handlers(states_callback: Any) -> None:
+def install_signal_handlers(
+    procs: dict[str, subprocess.Popen[bytes]],
+    states: dict[str, State],
+) -> None:
+    """SIGINT/SIGTERM 時に child claude subprocess を terminate→kill し、
+    RUNNING な state を FAILED に倒してから exit する。
+
+    procs は supervise() が所有する dict を共有参照する (closure 経由)。
+    handler の中で `procs.values()` を辿るので、 supervise() が新規 spawn
+    した直後でもその時点の生 worker をすべて掃除できる。
+    """
+
     def handler(signum: int, _frame: Any) -> None:
-        log.warning("received signal %d, persisting state and exiting", signum)
+        log.warning(
+            "received signal %d, terminating %d worker(s) and persisting state",
+            signum,
+            len(procs),
+        )
+        for tid, proc in list(procs.items()):
+            try:
+                if proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        log.warning("[%s] terminate timeout, sending SIGKILL", tid)
+                        proc.kill()
+                        try:
+                            proc.wait(timeout=3)
+                        except subprocess.TimeoutExpired:
+                            log.error("[%s] kill timeout, leaving orphan pid=%d", tid, proc.pid)
+            except Exception as exc:
+                # supervisor shutdown は決して死なせない (どんな worker でも最後まで掃除する)
+                log.warning("[%s] terminate failed: %s", tid, exc)
+            state = states.get(tid)
+            if state is not None and state.status == Status.RUNNING:
+                state.status = Status.FAILED
+                state.error = f"interrupted by signal {signum}"
+                state.finished_at = now_iso()
+                try:
+                    save_state(state)
+                except Exception as exc:
+                    log.warning("[%s] save_state failed during shutdown: %s", tid, exc)
         sys.exit(130)
 
     signal.signal(signal.SIGINT, handler)
@@ -568,7 +611,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     ORCH_DIR.mkdir(parents=True, exist_ok=True)
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    install_signal_handlers(None)
+    # signal handler は supervise() 内で procs/states を closure 捕捉した実体を install する。
+    # ここで先に install してしまうと procs を持たない handler が登録されてしまうので呼ばない。
     log.info("plan loaded: %d tasks (dry_run=%s, max_concurrent=%d)",
              len(tasks), args.dry_run, args.max_concurrent)
     states = supervise(
