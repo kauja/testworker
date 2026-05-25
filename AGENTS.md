@@ -40,6 +40,14 @@
 
 上記は **ハーネス（`.claude/settings.json` の `deny` + `.claude/hooks/`）でも物理的にブロック** している。エージェントが意図的に回避しようとしてはならない。
 
+### 例外: maintainer + Claude Code の admin bypass merge
+
+`.claude/settings.json` の allow に **`gh pr merge --squash --admin*`** と **`gh pr update-branch *`** を入れている。これは maintainer (有坂) と Claude Code (admin token) が CI 完走を待たずに自分の PR を merge できるようにするための **明示的な例外** であり、 contributor 経路（他者の PR）は依然 branch protection + CI で守られる。
+
+- 「保護を弱める」変更ではあるが maintainer の意思決定として確定済み（Issue #54）
+- Claude Code が `gh pr merge --squash --admin` を発行できるのは「自分が作った PR を進めるため」だけに使う。他者の PR をこのコマンドで先回り merge してはならない（review 必要なら依然人手で）。
+- 一般 contributor の PR は CI green + maintainer review を経てから auto-merge する従来フローを維持する。
+
 ## 拡大解釈の禁止（具体例）
 
 - 「PR 作成 OK」だから「auto-merge ルールを変更してよい」とは思わない

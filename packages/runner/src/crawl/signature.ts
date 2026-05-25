@@ -20,12 +20,20 @@ export interface PageSignature {
 }
 
 const STRUCTURE_SCRIPT = `() => {
-  const STABLE_ATTRS = ['id', 'role', 'data-testid', 'data-test', 'aria-label', 'name'];
+  // id は SPA で動的に発番されることが多い（user-1234, render-uuid 等）。
+  // 完全に外すと情報量が落ちるので、長い数字列・hex 列を含む id は弾く。
+  const STABLE_ATTRS = ['role', 'data-testid', 'data-test', 'aria-label', 'name'];
+  const STABLE_ID_SHAPE = /^[a-zA-Z][a-zA-Z0-9_-]{0,31}$/;
+  const UNSTABLE_ID_HINT = /\\d{4,}|[a-fA-F0-9]{8,}/;
 
   function tokenize(el, depth) {
     if (depth > 6) return '';
     const tag = el.tagName.toLowerCase();
     const attrs = [];
+    const id = el.getAttribute('id');
+    if (id && STABLE_ID_SHAPE.test(id) && !UNSTABLE_ID_HINT.test(id)) {
+      attrs.push('id=' + id);
+    }
     for (const a of STABLE_ATTRS) {
       const v = el.getAttribute(a);
       if (v) attrs.push(a + '=' + v.slice(0, 32));
