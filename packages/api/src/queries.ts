@@ -50,13 +50,57 @@ interface EdgeRow {
 }
 
 function rowToRun(row: RunRow): Run {
+  // disk corruption / 部分書き込み等で options_json が壊れていても /runs は落とさない。
+  let raw: unknown = {};
+  try {
+    raw = JSON.parse(row.options_json);
+  } catch (err) {
+    console.warn(
+      `[testworker-api] run ${row.id}: options_json JSON.parse failed`,
+      (err as Error).message,
+    );
+  }
+  // raw に startUrl が無い古い形式でも row.start_url で確実に補完する。
+  const merged: Record<string, unknown> =
+    typeof raw === 'object' && raw !== null ? { ...(raw as Record<string, unknown>) } : {};
+  if (typeof merged.startUrl !== 'string') merged.startUrl = row.start_url;
+  const parsed = CrawlOptions.safeParse(merged);
+  let options: CrawlOptions;
+  if (parsed.success) {
+    options = parsed.data;
+  } else {
+    console.warn(
+      `[testworker-api] run ${row.id}: options_json schema mismatch`,
+      parsed.error.flatten(),
+    );
+    // 最低限 startUrl + Zod の defaults だけで再構築する。
+    // CrawlOptions.parse は startUrl が z.string().url() を要求するため、
+    // legacy row で `host.docker.internal:3000` のような scheme なし URL が
+    // 入っているとここで throw する。 二段の try/catch にして最悪でも /runs を
+    // 落とさず手書き defaults でしのぐ。
+    try {
+      options = CrawlOptions.parse({ startUrl: row.start_url });
+    } catch {
+      options = {
+        startUrl: row.start_url,
+        maxDepth: 3,
+        maxPages: 50,
+        sameOriginOnly: true,
+        navTimeoutMs: 15_000,
+        waitAfterNavMs: 500,
+        viewport: { width: 1280, height: 800 },
+        includeUrlPatterns: [],
+        excludeUrlPatterns: [],
+      } as CrawlOptions;
+    }
+  }
   return {
     id: row.id,
     startUrl: row.start_url,
     status: row.status as Run['status'],
     startedAt: row.started_at,
     finishedAt: row.finished_at,
-    options: CrawlOptions.parse(JSON.parse(row.options_json)),
+    options,
     errorMessage: row.error_message,
   };
 }
