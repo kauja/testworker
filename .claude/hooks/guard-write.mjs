@@ -27,8 +27,13 @@ if (!path) process.exit(0);
 const abs = resolve(path);
 const lower = abs.toLowerCase();
 
+// ハーネス自己改変防止: 権限定義 / hook / CI workflow / 自動化 script は Write/Edit から不可触
+// 緩める場合は人間がエディタで直接編集する (Claude Code 経由ではない)
 const BANNED_DIR_FRAGMENTS = [
   `${sep}.git${sep}`,
+  `${sep}.github${sep}workflows${sep}`,
+  `${sep}.claude${sep}`,
+  `${sep}scripts${sep}`,
   `${sep}auth${sep}`,
   `${sep}test-target${sep}`,
   `${sep}test-targets${sep}`,
