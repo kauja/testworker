@@ -66,6 +66,53 @@ def test_load_plan_rejects_empty(tmp_path: Path) -> None:
         load_plan(_write(tmp_path, "p.yaml", "plan: []"))
 
 
+@pytest.mark.parametrize(
+    "bad_id",
+    [
+        "../etc/passwd",
+        ".hidden",
+        "..",
+        ".",
+        "with/slash",
+        "with spaces",
+        "",
+        "a" * 65,
+    ],
+)
+def test_load_plan_rejects_invalid_task_id(tmp_path: Path, bad_id: str) -> None:
+    yaml_text = f"""
+plan:
+  - id: {bad_id!r}
+    branch: feat/x
+    prompt: p
+"""
+    with pytest.raises(ValueError, match="Invalid task id"):
+        load_plan(_write(tmp_path, "p.yaml", yaml_text))
+
+
+@pytest.mark.parametrize(
+    "bad_branch",
+    [
+        "../escape",
+        "feat/../escape",
+        "/leading-slash",
+        ".hidden",
+        "..",
+        "with spaces",
+        "",
+    ],
+)
+def test_load_plan_rejects_invalid_task_branch(tmp_path: Path, bad_branch: str) -> None:
+    yaml_text = f"""
+plan:
+  - id: a
+    branch: {bad_branch!r}
+    prompt: p
+"""
+    with pytest.raises(ValueError, match="Invalid task branch"):
+        load_plan(_write(tmp_path, "p.yaml", yaml_text))
+
+
 def test_topological_order_linear() -> None:
     a = Task(id="a", branch="a", prompt="")
     b = Task(id="b", branch="b", prompt="", depends_on=["a"])

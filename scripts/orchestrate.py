@@ -19,6 +19,7 @@ import dataclasses
 import json
 import logging
 import os
+import re
 import shlex
 import shutil
 import signal
@@ -48,6 +49,14 @@ DEFAULT_MAX_ATTEMPTS = 2
 POLL_INTERVAL_SECONDS = 5
 BACKOFF_SCHEDULE_SECONDS = (30, 60, 120)
 RATE_LIMIT_MARKERS = ("rate limit", "rate-limit", "429", "Too Many Requests")
+# task.id は STATE_DIR/<id>.json と WORKTREE_DIR/<id> に path 結合される。
+# YAML plan は CI / 他者 PR 経由で attacker-controllable なため、 path traversal
+# (`../` 等) を防ぐ厳しめのホワイトリスト regex を必須とする。
+# 先頭は英数字 / `_` のみ許可し `.` 始まりを禁止 → `.` / `..` 単独を物理的に排除。
+TASK_ID_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$")
+# task.branch は git に直接渡される。 git ref-format に従い `/` を許す一方、
+# `..` 部分文字列・先頭末尾の `/` `.` `-` は別途排除する。
+TASK_BRANCH_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._/-]{0,127}$")
 
 log = logging.getLogger("orchestrate")
 
@@ -110,9 +119,21 @@ def load_plan(path: Path) -> list[Task]:
     for entry in items:
         if not isinstance(entry, dict):
             raise ValueError(f"Each plan entry must be a mapping, got {type(entry).__name__}")
+        raw_id = str(entry["id"])
+        raw_branch = str(entry["branch"])
+        if not TASK_ID_RE.fullmatch(raw_id):
+            raise ValueError(
+                f"Invalid task id {raw_id!r}: must match {TASK_ID_RE.pattern} "
+                f"(letters / digits / _ / - / . only, 1-64 chars, leading char letter or _)",
+            )
+        if not TASK_BRANCH_RE.fullmatch(raw_branch) or ".." in raw_branch:
+            raise ValueError(
+                f"Invalid task branch {raw_branch!r}: must match {TASK_BRANCH_RE.pattern} "
+                f"and must not contain '..'",
+            )
         task = Task(
-            id=str(entry["id"]),
-            branch=str(entry["branch"]),
+            id=raw_id,
+            branch=raw_branch,
             prompt=str(entry["prompt"]),
             tests=list(entry.get("tests") or []),
             depends_on=list(entry.get("depends_on") or []),
