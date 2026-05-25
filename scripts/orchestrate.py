@@ -480,8 +480,24 @@ def supervise(
     # cmd_run 側の install_signal_handlers(None) は古い実装の名残で、 ここで上書きする。
     install_signal_handlers(procs, states)
 
-    def terminal(s: Status) -> bool:
-        return s in (Status.PASSED_TESTS, Status.PR_OPENED, Status.FAILED, Status.SKIPPED)
+    def terminal(state: State) -> bool:
+        """この state はもう supervise() がやることが無いか?
+
+        PASSED_TESTS / PR_OPENED / SKIPPED は確定 terminal。
+        FAILED は (a) retry 余地が残っているか (attempts < max_attempts) または
+        (b) backoff 待ち (next_attempt_after が将来) のいずれかなら non-terminal。
+        backoff 中の FAILED を terminal 扱いしてしまうと、 他に走るタスクが無い時に
+        supervisor が backoff 解除を待たず終了し、 rate-limit retry が同一
+        invocation 内では発動しなくなる (Issue #65)。
+        """
+        if state.status in (Status.PASSED_TESTS, Status.PR_OPENED, Status.SKIPPED):
+            return True
+        if state.status == Status.FAILED:
+            if state.attempts < max_attempts:
+                return False
+            # backoff 待ちなら non-terminal、 解除済みなら permanent fail = terminal。
+            return state.next_attempt_after is None
+        return False
 
     while True:
         # check finished processes
@@ -524,7 +540,7 @@ def supervise(
             if running >= max_concurrent:
                 break
             state = states[task.id]
-            if terminal(state.status) and state.status != Status.FAILED:
+            if terminal(state):
                 continue
             if state.status == Status.FAILED:
                 if state.attempts >= max_attempts:
@@ -551,7 +567,7 @@ def supervise(
             log.info("[%s] spawned attempt=%d pid=%d", task.id, state.attempts, proc.pid)
 
         # all done?
-        if all(terminal(s.status) for s in states.values()) and not procs:
+        if all(terminal(s) for s in states.values()) and not procs:
             break
         time.sleep(POLL_INTERVAL_SECONDS)
 
