@@ -15,14 +15,17 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import logging
 import os
+import re
 import shlex
 import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from collections import defaultdict, deque
@@ -46,6 +49,14 @@ DEFAULT_MAX_ATTEMPTS = 2
 POLL_INTERVAL_SECONDS = 5
 BACKOFF_SCHEDULE_SECONDS = (30, 60, 120)
 RATE_LIMIT_MARKERS = ("rate limit", "rate-limit", "429", "Too Many Requests")
+# task.id は STATE_DIR/<id>.json と WORKTREE_DIR/<id> に path 結合される。
+# YAML plan は CI / 他者 PR 経由で attacker-controllable なため、 path traversal
+# (`../` 等) を防ぐ厳しめのホワイトリスト regex を必須とする。
+# 先頭は英数字 / `_` のみ許可し `.` 始まりを禁止 → `.` / `..` 単独を物理的に排除。
+TASK_ID_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$")
+# task.branch は git に直接渡される。 git ref-format に従い `/` を許す一方、
+# `..` 部分文字列・先頭末尾の `/` `.` `-` は別途排除する。
+TASK_BRANCH_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._/-]{0,127}$")
 
 log = logging.getLogger("orchestrate")
 
@@ -108,9 +119,21 @@ def load_plan(path: Path) -> list[Task]:
     for entry in items:
         if not isinstance(entry, dict):
             raise ValueError(f"Each plan entry must be a mapping, got {type(entry).__name__}")
+        raw_id = str(entry["id"])
+        raw_branch = str(entry["branch"])
+        if not TASK_ID_RE.fullmatch(raw_id):
+            raise ValueError(
+                f"Invalid task id {raw_id!r}: must match {TASK_ID_RE.pattern} "
+                f"(letters / digits / _ / - / . only, 1-64 chars, leading char letter or _)",
+            )
+        if not TASK_BRANCH_RE.fullmatch(raw_branch) or ".." in raw_branch:
+            raise ValueError(
+                f"Invalid task branch {raw_branch!r}: must match {TASK_BRANCH_RE.pattern} "
+                f"and must not contain '..'",
+            )
         task = Task(
-            id=str(entry["id"]),
-            branch=str(entry["branch"]),
+            id=raw_id,
+            branch=raw_branch,
             prompt=str(entry["prompt"]),
             tests=list(entry.get("tests") or []),
             depends_on=list(entry.get("depends_on") or []),
@@ -166,8 +189,24 @@ def load_state(task_id: str) -> State:
     if not p.exists():
         return State(id=task_id)
     data = json.loads(p.read_text(encoding="utf-8"))
-    data["status"] = Status(data["status"])
-    return State(**data)
+    # Forward-compat: 新版で追加された Status enum 値が checkpoint に書かれている
+    # 場合、 `Status(...)` は ValueError を投げて load_state ごと死ぬ。 旧版でも
+    # 復旧できるよう PENDING に倒し、 後段の reconcile_orphans で再評価させる。
+    try:
+        status = Status(data["status"])
+    except (ValueError, KeyError):
+        log.warning(
+            "[%s] unknown status %r in checkpoint, resetting to PENDING",
+            task_id,
+            data.get("status"),
+        )
+        status = Status.PENDING
+    data["status"] = status
+    # 新版で追加された field を持つ checkpoint を旧版で読むと State(**data) が
+    # TypeError で死ぬ。 known fields だけ取り出して再構築する。
+    known = {f.name for f in dataclasses.fields(State)}
+    filtered = {k: v for k, v in data.items() if k in known}
+    return State(**filtered)
 
 
 def save_state(state: State) -> None:
@@ -234,41 +273,79 @@ def remove_worktree(task_id: str) -> None:
 
 
 def spawn_claude(task: Task, worktree: Path, log_path: Path, dry_run: bool) -> subprocess.Popen[bytes]:
-    """Spawn `claude -p` (or a fake sleep in dry-run) with stdout/stderr → log_path."""
+    """Spawn `claude -p` (or a fake sleep in dry-run) with stdout/stderr → log_path.
+
+    親プロセスでは fh を Popen に渡したあと即 close する（child は自分の fd を
+    保持しているので問題ない）。 これで supervisor が長期稼働しても fd が累積
+    しない。 stdin への prompt 書き込みは別スレッドに逃がし、 大きな prompt が
+    パイプバッファを埋めても supervisor 本体がブロックされないようにする。
+    """
     log_path.parent.mkdir(parents=True, exist_ok=True)
     fh = log_path.open("ab")
-    if dry_run:
-        msg = (
-            f"[dry-run {task.id}] would run: claude -p {shlex.quote(task.prompt[:60])}...\n"
-            f"[dry-run {task.id}] worktree={worktree}\n"
-            f"[dry-run {task.id}] simulating work for 3s\n"
-        )
-        fh.write(msg.encode("utf-8"))
-        fh.flush()
-        proc = subprocess.Popen(
-            ["sh", "-c", "sleep 3 && echo '[dry-run] done'"],
-            cwd=worktree,
-            stdout=fh,
-            stderr=subprocess.STDOUT,
-        )
-    else:
-        # Prefer non-interactive headless mode. Pass prompt via stdin to avoid argv length limits.
-        proc = subprocess.Popen(
-            ["claude", "-p", "--output-format", "stream-json"],
-            cwd=worktree,
-            stdin=subprocess.PIPE,
-            stdout=fh,
-            stderr=subprocess.STDOUT,
-        )
-        if proc.stdin is not None:
-            proc.stdin.write(task.prompt.encode("utf-8"))
-            proc.stdin.close()
+    try:
+        if dry_run:
+            msg = (
+                f"[dry-run {task.id}] would run: claude -p {shlex.quote(task.prompt[:60])}...\n"
+                f"[dry-run {task.id}] worktree={worktree}\n"
+                f"[dry-run {task.id}] simulating work for 3s\n"
+            )
+            fh.write(msg.encode("utf-8"))
+            fh.flush()
+            proc = subprocess.Popen(
+                ["sh", "-c", "sleep 3 && echo '[dry-run] done'"],
+                cwd=worktree,
+                stdout=fh,
+                stderr=subprocess.STDOUT,
+            )
+        else:
+            proc = subprocess.Popen(
+                ["claude", "-p", "--output-format", "stream-json"],
+                cwd=worktree,
+                stdin=subprocess.PIPE,
+                stdout=fh,
+                stderr=subprocess.STDOUT,
+            )
+            stdin = proc.stdin
+            if stdin is not None:
+                prompt_bytes = task.prompt.encode("utf-8")
+
+                def _feed_prompt() -> None:
+                    try:
+                        stdin.write(prompt_bytes)
+                    except (BrokenPipeError, OSError) as exc:
+                        log.warning("[%s] stdin write failed: %s", task.id, exc)
+                    finally:
+                        try:
+                            stdin.close()
+                        except OSError:
+                            pass
+
+                threading.Thread(target=_feed_prompt, daemon=True, name=f"stdin-{task.id}").start()
+    finally:
+        # Child は dup された fd を保持するので、 親側はすぐ close して fd leak を防ぐ。
+        fh.close()
     return proc
+
+
+# 真の shell control operator のみ拾う。 `*` / `?` のような glob 文字は argv 実行で
+# そのまま渡せば多くの test runner (pytest, jest 等) が内部展開してくれるため、
+# わざわざ `sh -c` に流すと worktree に置かれた攻撃ファイル名 (例: `x;rm.py`) で
+# glob → shell injection を新規に開いてしまう (6R Angle D 指摘)。
+_SHELL_METACHARS = ("&&", "||", "|", ">", "<", ";", "$(", "`")
+
+
+def _needs_shell(cmd: str) -> bool:
+    return any(m in cmd for m in _SHELL_METACHARS)
 
 
 def run_tests(worktree: Path, tests: list[str], log_path: Path, dry_run: bool = False) -> bool:
     """Run each test command in the worktree. Returns True if all pass.
-    In dry_run mode, log the commands without executing and return True."""
+    In dry_run mode, log the commands without executing and return True.
+
+    `&&` / `|` / `>` / `;` などの shell 演算子を含む文字列は `sh -c` 経由で実行する
+    （shell=True を回避しつつ、既存 plan の互換を保つ）。それ以外は shlex.split()
+    で argv に分解して shell=False で実行する。
+    """
     if not tests:
         return True
     with log_path.open("ab") as fh:
@@ -278,8 +355,24 @@ def run_tests(worktree: Path, tests: list[str], log_path: Path, dry_run: bool = 
                 fh.write(f"[tests] (dry-run) $ {cmd}\n".encode())
                 continue
             fh.write(f"[tests] $ {cmd}\n".encode())
+            if _needs_shell(cmd):
+                fh.write(b"[tests] (using sh -c due to shell metachar)\n")
+                argv: list[str] = ["sh", "-c", cmd]
+            else:
+                try:
+                    argv = shlex.split(cmd)
+                except ValueError as exc:
+                    fh.write(f"[tests] PARSE ERROR: {exc}\n".encode())
+                    return False
+                if not argv:
+                    fh.write(b"[tests] empty command, skipping\n")
+                    continue
             res = subprocess.run(
-                cmd, shell=True, cwd=worktree, stdout=fh, stderr=subprocess.STDOUT, check=False
+                argv,
+                cwd=worktree,
+                stdout=fh,
+                stderr=subprocess.STDOUT,
+                check=False,
             )
             if res.returncode != 0:
                 fh.write(f"[tests] FAILED exit={res.returncode}\n".encode())
@@ -326,12 +419,6 @@ def detect_rate_limit(log_path: Path) -> bool:
     return any(marker.lower() in tail.lower() for marker in RATE_LIMIT_MARKERS)
 
 
-def backoff_until(attempts: int) -> str:
-    idx = min(attempts - 1, len(BACKOFF_SCHEDULE_SECONDS) - 1)
-    delta = BACKOFF_SCHEDULE_SECONDS[idx]
-    return datetime.now(UTC).timestamp().__add__(delta).__repr__()  # not used directly
-
-
 def schedule_backoff(state: State) -> None:
     idx = min(state.attempts - 1, len(BACKOFF_SCHEDULE_SECONDS) - 1)
     delta = BACKOFF_SCHEDULE_SECONDS[idx]
@@ -353,6 +440,31 @@ def all_deps_done(task: Task, states: dict[str, State]) -> bool:
     )
 
 
+def reconcile_orphans(states: dict[str, State]) -> None:
+    """前回のクラッシュで RUNNING のまま残った state を FAILED に倒す。
+
+    これをしないと supervise() の running カウンタが永続的に max_concurrent を超え、
+    新規 spawn できず terminal 判定も成立せず無限ループに陥る。
+
+    Orphan は「試行が完了しなかった」ので attempts を 1 つ戻し、backoff も解除する。
+    残った worktree も remove して、ensure_worktree が clean に作り直せるようにする。
+    """
+    for st in states.values():
+        if st.status == Status.RUNNING:
+            log.warning("[%s] orphan RUNNING state from previous run, resetting to FAILED", st.id)
+            st.status = Status.FAILED
+            st.error = "orphan RUNNING from previous orchestrator run"
+            # 試行は途中で中断されたので 1 attempt 分は消費していない扱いに戻す。
+            # max_attempts に達して permanent failed になるのを防ぐ。
+            if st.attempts > 0:
+                st.attempts -= 1
+            # 古い backoff スケジュールを引きずらない。
+            st.next_attempt_after = None
+            # 半端な worktree を片付けて、再 spawn 時に clean に作り直せるようにする。
+            remove_worktree(st.id)
+            save_state(st)
+
+
 def supervise(
     tasks: list[Task],
     *,
@@ -361,11 +473,31 @@ def supervise(
     dry_run: bool,
 ) -> dict[str, State]:
     states: dict[str, State] = {t.id: load_state(t.id) for t in tasks}
+    reconcile_orphans(states)
     procs: dict[str, subprocess.Popen[bytes]] = {}
     log_paths: dict[str, Path] = {t.id: LOG_DIR / f"{t.id}.log" for t in tasks}
+    # procs / states を参照できる位置で signal handler を再 install する。
+    # cmd_run 側の install_signal_handlers(None) は古い実装の名残で、 ここで上書きする。
+    install_signal_handlers(procs, states)
 
-    def terminal(s: Status) -> bool:
-        return s in (Status.PASSED_TESTS, Status.PR_OPENED, Status.FAILED, Status.SKIPPED)
+    def terminal(state: State) -> bool:
+        """この state はもう supervise() がやることが無いか?
+
+        PASSED_TESTS / PR_OPENED / SKIPPED は確定 terminal。
+        FAILED は (a) retry 余地が残っているか (attempts < max_attempts) または
+        (b) backoff 待ち (next_attempt_after が将来) のいずれかなら non-terminal。
+        backoff 中の FAILED を terminal 扱いしてしまうと、 他に走るタスクが無い時に
+        supervisor が backoff 解除を待たず終了し、 rate-limit retry が同一
+        invocation 内では発動しなくなる (Issue #65)。
+        """
+        if state.status in (Status.PASSED_TESTS, Status.PR_OPENED, Status.SKIPPED):
+            return True
+        if state.status == Status.FAILED:
+            if state.attempts < max_attempts:
+                return False
+            # backoff 待ちなら non-terminal、 解除済みなら permanent fail = terminal。
+            return state.next_attempt_after is None
+        return False
 
     while True:
         # check finished processes
@@ -386,12 +518,19 @@ def supervise(
                 state.last_step = "claude done, running tests"
                 save_state(state)
                 wt = WORKTREE_DIR / tid
-                if run_tests(wt, task.tests, log_paths[tid], dry_run=dry_run):
-                    state.status = Status.PASSED_TESTS
-                    state.last_step = "tests passed"
-                else:
+                try:
+                    tests_passed = run_tests(wt, task.tests, log_paths[tid], dry_run=dry_run)
+                except Exception as exc:  # noqa: BLE001 — supervisor は決して死なせない
+                    log.exception("[%s] run_tests raised", tid)
                     state.status = Status.FAILED
-                    state.error = "tests failed"
+                    state.error = f"run_tests raised: {exc}"
+                else:
+                    if tests_passed:
+                        state.status = Status.PASSED_TESTS
+                        state.last_step = "tests passed"
+                    else:
+                        state.status = Status.FAILED
+                        state.error = "tests failed"
             save_state(state)
             del procs[tid]
 
@@ -401,7 +540,7 @@ def supervise(
             if running >= max_concurrent:
                 break
             state = states[task.id]
-            if terminal(state.status) and state.status != Status.FAILED:
+            if terminal(state):
                 continue
             if state.status == Status.FAILED:
                 if state.attempts >= max_attempts:
@@ -428,7 +567,7 @@ def supervise(
             log.info("[%s] spawned attempt=%d pid=%d", task.id, state.attempts, proc.pid)
 
         # all done?
-        if all(terminal(s.status) for s in states.values()) and not procs:
+        if all(terminal(s) for s in states.values()) and not procs:
             break
         time.sleep(POLL_INTERVAL_SECONDS)
 
@@ -450,9 +589,49 @@ def supervise(
     return states
 
 
-def install_signal_handlers(states_callback: Any) -> None:
+def install_signal_handlers(
+    procs: dict[str, subprocess.Popen[bytes]],
+    states: dict[str, State],
+) -> None:
+    """SIGINT/SIGTERM 時に child claude subprocess を terminate→kill し、
+    RUNNING な state を FAILED に倒してから exit する。
+
+    procs は supervise() が所有する dict を共有参照する (closure 経由)。
+    handler の中で `procs.values()` を辿るので、 supervise() が新規 spawn
+    した直後でもその時点の生 worker をすべて掃除できる。
+    """
+
     def handler(signum: int, _frame: Any) -> None:
-        log.warning("received signal %d, persisting state and exiting", signum)
+        log.warning(
+            "received signal %d, terminating %d worker(s) and persisting state",
+            signum,
+            len(procs),
+        )
+        for tid, proc in list(procs.items()):
+            try:
+                if proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        log.warning("[%s] terminate timeout, sending SIGKILL", tid)
+                        proc.kill()
+                        try:
+                            proc.wait(timeout=3)
+                        except subprocess.TimeoutExpired:
+                            log.error("[%s] kill timeout, leaving orphan pid=%d", tid, proc.pid)
+            except Exception as exc:
+                # supervisor shutdown は決して死なせない (どんな worker でも最後まで掃除する)
+                log.warning("[%s] terminate failed: %s", tid, exc)
+            state = states.get(tid)
+            if state is not None and state.status == Status.RUNNING:
+                state.status = Status.FAILED
+                state.error = f"interrupted by signal {signum}"
+                state.finished_at = now_iso()
+                try:
+                    save_state(state)
+                except Exception as exc:
+                    log.warning("[%s] save_state failed during shutdown: %s", tid, exc)
         sys.exit(130)
 
     signal.signal(signal.SIGINT, handler)
@@ -469,7 +648,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     ORCH_DIR.mkdir(parents=True, exist_ok=True)
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    install_signal_handlers(None)
+    # signal handler は supervise() 内で procs/states を closure 捕捉した実体を install する。
+    # ここで先に install してしまうと procs を持たない handler が登録されてしまうので呼ばない。
     log.info("plan loaded: %d tasks (dry_run=%s, max_concurrent=%d)",
              len(tasks), args.dry_run, args.max_concurrent)
     states = supervise(
