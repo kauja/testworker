@@ -34,6 +34,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Workflow Rules
 
+- **AI-DLC（Intent → Bolt）**: 大きい product goal は `type:intent` の Outcome 言語化、その下に 1-2 週で動かす `type:bolt` をぶら下げて Bolt 単位で PR 化する。「次にやること」は `type:intent` + `stage:active` の配下の Bolt から拾う。詳細は [AGENTS.md「AI-DLC: Intent → Bolt の運用」](./AGENTS.md#ai-dlc-intent--bolt-の運用必読)
 - **multi-round refactor / 連続 PR**: 1 PR ずつ CI green を確認してから次 PR を開く。連続 push で main を不安定化させない（必要なら手元で `git fetch origin main && git merge origin/main` で追従してから新 PR）
 - **parallel worker subagent**: 並列度は cap（default 2、最大 3）。fan-out 前に対象スコープ（service / package / file 群）の **完全な一覧** をユーザに提示・確認してから起動する（漏れて後追い再実行を避ける）。**書き込みを伴う並列 worker は必ず worktree で隔離する**（下記）
 - **worktree 隔離（並列開発の必須要件）**: 2 つ以上のエージェント / タスクが同時にファイルを編集するときは、各 worker を独立した git worktree で動かす。
