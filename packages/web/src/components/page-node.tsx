@@ -5,11 +5,17 @@ import type { PageState } from '@testworker/shared';
 import { assetUrl } from '@/lib/api';
 import { cn } from '@/lib/cn';
 
-export type PageNodeData = { page: PageState; selected: boolean };
+export type PageNodeData = {
+  page: PageState;
+  selected: boolean;
+  /** 表示用 label (#174)。 未指定なら page.title → URL fallback。 */
+  displayLabel?: string;
+};
 export type PageNodeType = Node<PageNodeData, 'page'>;
 
 export function PageNode({ data }: NodeProps<PageNodeType>) {
-  const { page, selected } = data;
+  const { page, selected, displayLabel } = data;
+  const label = displayLabel ?? page.title ?? '(untitled)';
   const hasError = page.errorCount + page.consoleErrorCount + page.networkErrorCount > 0;
   return (
     <div
@@ -43,8 +49,8 @@ export function PageNode({ data }: NodeProps<PageNodeType>) {
         )}
       </div>
       <div className="px-3 py-2">
-        <div className="truncate text-[12px] font-medium text-ink">
-          {page.title || '(untitled)'}
+        <div className="truncate text-[12px] font-medium text-ink" title={page.title}>
+          {label}
         </div>
         <div className="truncate text-[11px] text-ink-faint">{page.url}</div>
       </div>
