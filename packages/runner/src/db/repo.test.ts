@@ -85,6 +85,7 @@ const run = {
     autoScrollDelayMs: 400,
     blockResourceTypes: [],
     blockUrlPatterns: [],
+    cacheMode: 'warm' as const,
   },
   errorMessage: null,
   pagesDone: 0,
