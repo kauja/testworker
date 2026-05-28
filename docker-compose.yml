@@ -5,6 +5,30 @@ x-common-env: &common-env
   DB_PATH: /data/db/testworker.sqlite
 
 services:
+  # `docker compose up` 一発で migrate + runner ready まで完了させる (#151)。
+  # 起動時に runner image で `db:migrate` を 1 回だけ実行し、 完了したら exit。
+  # api が `service_completed_successfully` で待つので、 DB 未初期化のまま
+  # api が起動して 503 hint を出すケース (#141) も `compose up` 経路では消える。
+  # `make migrate` 経路は CLI ユーザ向けに残す。
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/runner.Dockerfile
+    environment:
+      <<: *common-env
+    volumes:
+      - ./packages:/workspace/packages
+      - ./package.json:/workspace/package.json
+      - ./pnpm-workspace.yaml:/workspace/pnpm-workspace.yaml
+      - ./tsconfig.base.json:/workspace/tsconfig.base.json
+      - ./data:/data
+      - runner_node_modules:/workspace/node_modules
+    working_dir: /workspace
+    # ENTRYPOINT が `pnpm --filter @testworker/runner run` で固定なので、
+    # CMD として渡すのは script 名 (db:migrate) だけにする (Issue #137 と同じ知見)。
+    command: ['db:migrate']
+    restart: 'no'
+
   api:
     build:
       context: .
@@ -24,6 +48,9 @@ services:
       - api_node_modules:/workspace/node_modules
     working_dir: /workspace
     command: pnpm --filter @testworker/api run dev
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
   web:
     build:
@@ -46,7 +73,10 @@ services:
     working_dir: /workspace
     command: pnpm --filter @testworker/web run dev
     depends_on:
-      - api
+      api:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
 
   # オンデマンド実行: `docker compose run --rm runner <url>` の形で使う。
   runner:
