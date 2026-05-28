@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -15,6 +15,7 @@ import '@xyflow/react/dist/style.css';
 import type { GraphPayload, PageState } from '@testworker/shared';
 import { cn } from '@/lib/cn';
 import { harDownloadUrl } from '@/lib/api';
+import { computePageLabels } from '@/lib/page-label';
 import { PageNode } from './page-node';
 import { PageDetailPanel } from './page-detail-panel';
 
@@ -51,17 +52,29 @@ function layout(pages: PageState[]): Record<string, { x: number; y: number }> {
 
 export function GraphView({ graph }: { graph: GraphPayload }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // ReactFlow v12 の MiniMap は viewport サイズに応じて SVG の shapeRendering
+  // 属性を SSR と CSR で変える (`crispEdges` ↔ `geometricPrecision`) ため、
+  // Next.js App Router の 'use client' コンポーネントでも SSR pass で
+  // hydration mismatch が出る (#183)。 client mount 後だけ描画する。
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   // minimap は 22 pages 程度の run でも画面の 1/4 弱を占め、 graph 本体に被る (#166)。
   // default off + toggle で「観察」 と「俯瞰」 を分離する。 m キーでも toggle 可。
   const [minimapVisible, setMinimapVisible] = useState(false);
 
   const nodes = useMemo<Node[]>(() => {
     const positions = layout(graph.pages);
+    // 全 pages 単位で title 重複を見て unique を保つ表示 label を一括計算 (#174)。
+    const labels = computePageLabels(graph.pages);
     return graph.pages.map((p) => ({
       id: p.id,
       type: 'page',
       position: positions[p.id] ?? { x: 0, y: 0 },
-      data: { page: p, selected: p.id === selectedId },
+      data: {
+        page: p,
+        selected: p.id === selectedId,
+        displayLabel: labels.get(p.id),
+      },
       width: NODE_W,
       height: NODE_H,
     }));
@@ -197,7 +210,7 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
             // Next.js DevTools の N アイコンと左下端で被るのを避ける (#166)。
             position="bottom-right"
           />
-          {minimapVisible && (
+          {mounted && minimapVisible && (
             <MiniMap
               pannable
               zoomable
