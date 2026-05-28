@@ -35,14 +35,28 @@ if (!existsSync(DB_PATH)) {
 const db = openReadDb(DB_PATH);
 const app = new Hono();
 
+// CORS_ORIGIN 環境変数で許可 origin を制限する (Issue #103, defense in depth)。
+//   - 未設定 / `*` → wildcard (デフォルト、 dev 利便性)
+//   - CSV (例: `https://app.example.com,https://staging.example.com`) → allowlist
+// 値は trim + 空除去。 list が空になった場合は wildcard に fallback。
+const CORS_ORIGIN: string | string[] = (() => {
+  const raw = process.env.CORS_ORIGIN;
+  if (!raw || raw.trim() === '' || raw.trim() === '*') return '*';
+  const list = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return list.length === 0 ? '*' : list;
+})();
+
 // CORS は JSON API のみに付ける。 /assets/* に wildcard CORS を付けると、
 // 攻撃者ページから fetch('/assets/runs/.../screenshot.png') で screenshot や
 // HAR の中身を読み取れてしまう (Issue #95)。 撮影対象の管理画面に映った
 // 秘密情報が cross-origin で漏れるのを SOP (Same-Origin Policy) で防ぐため、
 // /assets/* には Access-Control-Allow-Origin を付けない。
-app.use('/health', cors({ origin: '*' }));
-app.use('/runs/*', cors({ origin: '*' }));
-app.use('/pages/*', cors({ origin: '*' }));
+app.use('/health', cors({ origin: CORS_ORIGIN }));
+app.use('/runs/*', cors({ origin: CORS_ORIGIN }));
+app.use('/pages/*', cors({ origin: CORS_ORIGIN }));
 
 app.get('/health', (c) => c.json({ ok: true }));
 
