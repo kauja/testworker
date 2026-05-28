@@ -1,100 +1,90 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { openDb } from './client.js';
 import { loadRunnerEnv } from '../config.js';
 
-const DDL = `
-CREATE TABLE IF NOT EXISTS runs (
-  id TEXT PRIMARY KEY,
-  start_url TEXT NOT NULL,
-  status TEXT NOT NULL,
-  started_at TEXT NOT NULL,
-  finished_at TEXT,
-  options_json TEXT NOT NULL,
-  error_message TEXT
-);
+const __filename = fileURLToPath(import.meta.url);
+const MIGRATIONS_DIR = join(dirname(__filename), 'migrations');
+const MIGRATION_FILE_RE = /^(\d{3,})-[\w-]+\.sql$/;
 
-CREATE TABLE IF NOT EXISTS page_states (
-  id TEXT PRIMARY KEY,
-  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-  url TEXT NOT NULL,
-  title TEXT NOT NULL,
-  signature TEXT NOT NULL,
-  depth INTEGER NOT NULL,
-  visited_at TEXT NOT NULL,
-  screenshot_path TEXT,
-  viewport_w INTEGER NOT NULL,
-  viewport_h INTEGER NOT NULL,
-  error_count INTEGER NOT NULL DEFAULT 0,
-  console_error_count INTEGER NOT NULL DEFAULT 0,
-  network_error_count INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS idx_page_states_run ON page_states(run_id);
-CREATE UNIQUE INDEX IF NOT EXISTS uniq_page_states_run_signature ON page_states(run_id, signature);
+interface Migration {
+  version: number;
+  name: string;
+  sql: string;
+}
 
-CREATE TABLE IF NOT EXISTS edges (
-  id TEXT PRIMARY KEY,
-  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-  from_page_state_id TEXT NOT NULL REFERENCES page_states(id) ON DELETE CASCADE,
-  to_page_state_id TEXT NOT NULL REFERENCES page_states(id) ON DELETE CASCADE,
-  trigger TEXT NOT NULL,
-  trigger_selector TEXT,
-  trigger_text TEXT,
-  created_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_edges_run ON edges(run_id);
-CREATE UNIQUE INDEX IF NOT EXISTS uniq_edges_pair_trigger
-  ON edges(run_id, from_page_state_id, to_page_state_id, trigger, COALESCE(trigger_selector, ''));
+function loadMigrations(): Migration[] {
+  const files = readdirSync(MIGRATIONS_DIR).filter((f) => MIGRATION_FILE_RE.test(f));
+  files.sort();
+  const seen = new Set<number>();
+  return files.map((name) => {
+    const match = name.match(MIGRATION_FILE_RE);
+    if (!match || !match[1]) throw new Error(`invalid migration file: ${name}`);
+    const version = Number(match[1]);
+    if (seen.has(version)) {
+      throw new Error(`duplicate migration version ${version} (${name})`);
+    }
+    seen.add(version);
+    const sql = readFileSync(join(MIGRATIONS_DIR, name), 'utf8');
+    return { version, name, sql };
+  });
+}
 
-CREATE TABLE IF NOT EXISTS console_entries (
-  id TEXT PRIMARY KEY,
-  page_state_id TEXT NOT NULL REFERENCES page_states(id) ON DELETE CASCADE,
-  level TEXT NOT NULL,
-  text TEXT NOT NULL,
-  url TEXT,
-  line_number INTEGER,
-  timestamp TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_console_page ON console_entries(page_state_id);
-
-CREATE TABLE IF NOT EXISTS network_entries (
-  id TEXT PRIMARY KEY,
-  page_state_id TEXT NOT NULL REFERENCES page_states(id) ON DELETE CASCADE,
-  method TEXT NOT NULL,
-  url TEXT NOT NULL,
-  status INTEGER,
-  status_text TEXT,
-  resource_type TEXT NOT NULL,
-  started_at TEXT NOT NULL,
-  duration_ms INTEGER,
-  from_cache INTEGER NOT NULL DEFAULT 0,
-  failed INTEGER NOT NULL DEFAULT 0,
-  failure_text TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_network_page ON network_entries(page_state_id);
-
-CREATE TABLE IF NOT EXISTS page_errors (
-  id TEXT PRIMARY KEY,
-  page_state_id TEXT NOT NULL REFERENCES page_states(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL,
-  message TEXT NOT NULL,
-  stack TEXT,
-  timestamp TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_errors_page ON page_errors(page_state_id);
-`;
-
-export function migrate(dbPath: string): void {
+export function migrate(dbPath: string): { applied: string[]; finalVersion: number } {
   const db = openDb(dbPath);
-  db.$sqlite.exec(DDL);
-  db.close();
+  try {
+    const migrations = loadMigrations();
+    const row = db.$sqlite.prepare('PRAGMA user_version').get() as
+      | { user_version: number }
+      | undefined;
+    const current = row?.user_version ?? 0;
+
+    const applied: string[] = [];
+    for (const m of migrations) {
+      if (m.version <= current) continue;
+      // SQL 適用と PRAGMA user_version 更新を 1 transaction にまとめ、
+      // 途中失敗で「DDL は進んだが version が古い」状態を作らない。
+      const tx = db.$sqlite.transaction(() => {
+        db.$sqlite.exec(m.sql);
+        // user_version は PRAGMA で動的値を bind できないので template literal で組む。
+        // version は整数で MIGRATION_FILE_RE で validate 済みのため SQL injection 余地なし。
+        db.$sqlite.exec(`PRAGMA user_version = ${m.version}`);
+      });
+      tx();
+      applied.push(m.name);
+      console.log(`[testworker] migrated to v${m.version} (${m.name})`);
+    }
+    const final = (db.$sqlite.prepare('PRAGMA user_version').get() as { user_version: number })
+      .user_version;
+    return { applied, finalVersion: final };
+  } finally {
+    db.close();
+  }
 }
 
 function main(): void {
   const env = loadRunnerEnv();
-  migrate(env.dbPath);
-  console.log(`[testworker] migrated: ${env.dbPath}`);
+  const result = migrate(env.dbPath);
+  if (result.applied.length === 0) {
+    console.log(`[testworker] already up-to-date (v${result.finalVersion}): ${env.dbPath}`);
+  } else {
+    console.log(
+      `[testworker] migrated ${result.applied.length} step(s) → v${result.finalVersion}: ${env.dbPath}`,
+    );
+  }
 }
 
-const isMain = import.meta.url === `file://${process.argv[1]}`;
+// tsx 経由 / build 後 node 経由 / Windows path などで `file://` 比較が安定しないため、
+// fileURLToPath で OS-native path に揃えて比較する。
+const isMain = (() => {
+  if (!process.argv[1]) return false;
+  try {
+    return fileURLToPath(import.meta.url) === process.argv[1];
+  } catch {
+    return false;
+  }
+})();
 if (isMain) {
   main();
 }
