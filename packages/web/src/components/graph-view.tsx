@@ -101,6 +101,14 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
               </a>
             </>
           )}
+          <span className="text-ink-faint">·</span>
+          <a
+            href={`/runs/${graph.run.id}/diff`}
+            className="text-accent hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+            title="1 つ前の run との差分を表示 (Intent #125)"
+          >
+            diff →
+          </a>
         </div>
         <ReactFlow
           nodes={nodes}
