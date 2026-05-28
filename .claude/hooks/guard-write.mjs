@@ -27,9 +27,16 @@ if (!path) process.exit(0);
 const abs = resolve(path);
 const lower = abs.toLowerCase();
 
+// ハーネス自己改変防止 + sandbox 防御。 文字列 fragment match で block するパス。
+// source path に同名が出ない token に限る。 `auth` だけは packages/runner/src/auth/ など
+// source path に重複するので、 BANNED_DIR_FRAGMENTS から除外し、 別途 repo-root 直下
+// 限定の判定を下で行う (#73)。 .claude / .github/workflows / scripts は source path
+// に重複しないため fragment match で OK (#63)。
 const BANNED_DIR_FRAGMENTS = [
   `${sep}.git${sep}`,
-  `${sep}auth${sep}`,
+  `${sep}.github${sep}workflows${sep}`,
+  `${sep}.claude${sep}`,
+  `${sep}scripts${sep}`,
   `${sep}test-target${sep}`,
   `${sep}test-targets${sep}`,
   `${sep}fixtures-private${sep}`,
@@ -38,6 +45,13 @@ const BANNED_DIR_FRAGMENTS = [
 ];
 for (const f of BANNED_DIR_FRAGMENTS) {
   if (lower.includes(f)) block(`書き込み禁止ディレクトリ: ${f.replaceAll(sep, '/')}`);
+}
+
+// `auth` は cwd (= repo root) 直下のみ block。 storage-state や個人 session の
+// sandbox を守りつつ、 packages/runner/src/auth/ 等の source は許容する。
+const TOP_AUTH = resolve(process.cwd(), 'auth');
+if (abs === TOP_AUTH || abs.startsWith(TOP_AUTH + sep)) {
+  block('書き込み禁止ディレクトリ: repo root の auth/ (storage-state 等の sandbox)');
 }
 
 const BANNED_FILES = [/\.env(?:\.|$)/, /storage-state[^/]*\.json$/i, /\.har$/i];
