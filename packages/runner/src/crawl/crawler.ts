@@ -30,8 +30,14 @@ import { computeSignature } from './signature.js';
 import { collectInteractions, type Interaction } from './interactions.js';
 import { applyPageStateId, createMonitors } from './monitors.js';
 import { collectWebVitals, installWebVitals } from './web-vitals.js';
+import { applyCacheMode } from './cache.js';
+import { applyThrottling } from './throttle.js';
 import { loadLoginScript } from '../auth/login.js';
 import { createRobotsCache, isAllowedByRobots } from './robots.js';
+import { autoScroll } from './auto-scroll.js';
+import { hasResourceBlocking, installResourceBlocking } from './resource-block.js';
+import { loadInjectScript } from './inject.js';
+import { resolveDeviceProfile } from './devices.js';
 
 const DEFAULT_ROBOTS_UA = 'testworker';
 
@@ -89,15 +95,35 @@ export async function runCrawl(
   let edgeCount = 0;
 
   try {
+    // Issue #196: deviceProfile を 1 回だけ解決し、 newContext と
+    // pageState.viewport の両方で同じ値を使う (画面とメタの不一致を防ぐ)。
+    const device = resolveDeviceProfile(options);
     browser = await chromium.launch({ headless: true });
     context = await browser.newContext({
-      viewport: options.viewport,
-      userAgent: options.userAgent,
+      viewport: device.viewport,
+      userAgent: device.userAgent,
+      deviceScaleFactor: device.deviceScaleFactor,
+      isMobile: device.isMobile,
+      hasTouch: device.hasTouch,
       storageState: options.storageStatePath,
       recordHar: { path: harAbsPath, mode: 'minimal' },
     });
     if (options.captureWebVitals) {
       await installWebVitals(context);
+    }
+    // Issue #202: analytics / ads / font 等の不要リソースを abort する。
+    // 何もブロックしない既定 run では route を登録しない (interception 無し = 完全後方互換)。
+    if (hasResourceBlocking(options)) {
+      await installResourceBlocking(context, options);
+    }
+
+    // Issue #203: カスタム JS 注入フック。 context.addInitScript はコンテキスト全体に
+    // 登録され、 以降生成される全ページ・全ナビゲーションで「ページ評価前」に毎回走る。
+    // login script より前に登録することでログイン画面も含め全評価前に注入される。
+    // 内容はブラウザのページコンテキストで実行 (Node ホストでは実行しない)。
+    if (options.injectScriptPath) {
+      const injectSource = await loadInjectScript(options.injectScriptPath);
+      await context.addInitScript(injectSource);
     }
 
     const monitors = createMonitors();
@@ -106,6 +132,25 @@ export async function runCrawl(
     const page = await context.newPage();
     monitors.attach(page);
     page.setDefaultNavigationTimeout(options.navTimeoutMs);
+
+    // Issue #205: cacheMode を CDP で適用 (warm は no-op)。 cold は login 前に
+    // ブラウザキャッシュ + Cookie をクリアするので、 storageState ではなく loginScript と
+    // 組み合わせる前提。 CDP は Chromium 限定 / 失敗しても巡回は続行する (fail-open)。
+    try {
+      await applyCacheMode(context, page, options.cacheMode);
+    } catch (err) {
+      clog.warn(
+        { err: (err as Error).message, cacheMode: options.cacheMode },
+        'applyCacheMode failed',
+      );
+    }
+    // Issue #197: Network / CPU throttling を CDP 経由で適用。 throttling 不要なら
+    // (networkThrottle:'none' かつ cpuThrottle:1) 何もしない。 login script より前に
+    // 適用して、 認証フローも絞られた条件下で走らせる。
+    await applyThrottling(page, {
+      networkThrottle: options.networkThrottle,
+      cpuThrottle: options.cpuThrottle,
+    });
 
     if (options.loginScriptPath) {
       const login = await loadLoginScript(options.loginScriptPath);
@@ -172,7 +217,7 @@ export async function runCrawl(
       }
 
       try {
-        await page.goto(task.url, { waitUntil: 'load' });
+        await page.goto(task.url, { waitUntil: options.waitStrategy });
       } catch (err) {
         clog.warn({ url: task.url, err: (err as Error).message }, 'nav failed');
         // 失敗した遷移中に発生した console / pageerror / request イベントが
@@ -198,6 +243,13 @@ export async function runCrawl(
       }
       if (options.waitAfterNavMs > 0) {
         await page.waitForTimeout(options.waitAfterNavMs);
+      }
+      // infinite scroll / lazy load を発火させてから signature / screenshot を取る (Issue #199)。
+      if (options.autoScroll) {
+        await autoScroll(page, {
+          maxSteps: options.autoScrollMaxSteps,
+          delayMs: options.autoScrollDelayMs,
+        });
       }
 
       const sig = await computeSignature(page);
@@ -251,7 +303,7 @@ export async function runCrawl(
         depth: task.depth,
         visitedAt: new Date().toISOString(),
         screenshotPath,
-        viewport: options.viewport,
+        viewport: device.viewport,
         errorCount: errCount,
         consoleErrorCount: consoleErrCount,
         networkErrorCount: networkErrCount,

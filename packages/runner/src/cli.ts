@@ -1,10 +1,17 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
-import { log } from '@testworker/shared';
+import {
+  CrawlOptions,
+  DeviceProfile,
+  log,
+  NetworkThrottlePreset,
+  WaitStrategy,
+} from '@testworker/shared';
 import { openDb } from './db/client.js';
 import { migrate } from './db/migrate.js';
 import { loadRunnerEnv, optionsFromEnv } from './config.js';
 import { runCrawl } from './crawl/crawler.js';
+import { BLOCK_PRESETS, expandBlockPresets } from './crawl/resource-block.js';
 
 async function main(): Promise<void> {
   const { values, positionals } = parseArgs({
@@ -14,15 +21,25 @@ async function main(): Promise<void> {
       'max-pages': { type: 'string' },
       'nav-timeout-ms': { type: 'string' },
       'wait-after-nav-ms': { type: 'string' },
+      'wait-strategy': { type: 'string' },
       viewport: { type: 'string' },
+      device: { type: 'string' },
       'include-pattern': { type: 'string', multiple: true },
       'exclude-pattern': { type: 'string', multiple: true },
       'user-agent': { type: 'string' },
+      'cache-mode': { type: 'string' },
       'storage-state': { type: 'string' },
       'login-script': { type: 'string' },
+      'inject-script': { type: 'string' },
       'no-same-origin': { type: 'boolean', default: false },
       'no-respect-robots': { type: 'boolean', default: false },
       'no-web-vitals': { type: 'boolean', default: false },
+      'auto-scroll': { type: 'boolean', default: false },
+      'auto-scroll-max-steps': { type: 'string' },
+      'auto-scroll-delay-ms': { type: 'string' },
+      block: { type: 'string', multiple: true },
+      'network-throttle': { type: 'string' },
+      'cpu-throttle': { type: 'string' },
     },
     allowPositionals: true,
   });
@@ -44,7 +61,13 @@ async function main(): Promise<void> {
     ...(values['max-pages'] ? { maxPages: Number(values['max-pages']) } : {}),
     ...(values['nav-timeout-ms'] ? { navTimeoutMs: Number(values['nav-timeout-ms']) } : {}),
     ...(values['wait-after-nav-ms'] ? { waitAfterNavMs: Number(values['wait-after-nav-ms']) } : {}),
+    ...(values['wait-strategy']
+      ? { waitStrategy: WaitStrategy.parse(values['wait-strategy']) }
+      : {}),
     ...(values.viewport ? { viewport: parseViewport(values.viewport) } : {}),
+    // deviceProfile は DeviceProfile (zod enum) で narrow しつつ早期検証する
+    // (不正値は parse で throw → cli の error hint に流れる) (Issue #196)。
+    ...(values.device ? { deviceProfile: DeviceProfile.parse(values.device) } : {}),
     ...(values['include-pattern']
       ? { includeUrlPatterns: toStringArray(values['include-pattern']) }
       : {}),
@@ -52,11 +75,25 @@ async function main(): Promise<void> {
       ? { excludeUrlPatterns: toStringArray(values['exclude-pattern']) }
       : {}),
     ...(values['user-agent'] ? { userAgent: values['user-agent'] } : {}),
+    ...(values['cache-mode'] ? { cacheMode: parseCacheMode(values['cache-mode']) } : {}),
     ...(values['storage-state'] ? { storageStatePath: values['storage-state'] } : {}),
     ...(values['login-script'] ? { loginScriptPath: values['login-script'] } : {}),
+    ...(values['inject-script'] ? { injectScriptPath: values['inject-script'] } : {}),
     ...(values['no-same-origin'] ? { sameOriginOnly: false } : {}),
     ...(values['no-respect-robots'] ? { respectRobots: false } : {}),
     ...(values['no-web-vitals'] ? { captureWebVitals: false } : {}),
+    ...(values['auto-scroll'] ? { autoScroll: true } : {}),
+    ...(values['auto-scroll-max-steps']
+      ? { autoScrollMaxSteps: Number(values['auto-scroll-max-steps']) }
+      : {}),
+    ...(values['auto-scroll-delay-ms']
+      ? { autoScrollDelayMs: Number(values['auto-scroll-delay-ms']) }
+      : {}),
+    ...blockOverrides(values.block),
+    ...(values['network-throttle']
+      ? { networkThrottle: parseNetworkThrottle(values['network-throttle']) }
+      : {}),
+    ...(values['cpu-throttle'] ? { cpuThrottle: Number(values['cpu-throttle']) } : {}),
   };
 
   const db = openDb(env.dbPath);
@@ -135,6 +172,14 @@ main().catch((err) => {
   process.exit(1);
 });
 
+function parseNetworkThrottle(raw: string): NetworkThrottlePreset {
+  const parsed = NetworkThrottlePreset.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(`invalid network-throttle: ${raw} (expected none|offline|slow-3g|fast-3g)`);
+  }
+  return parsed.data;
+}
+
 function parseViewport(raw: string): { width: number; height: number } {
   const match = raw.match(/^(\d+)x(\d+)$/);
   if (!match) throw new Error(`invalid viewport: ${raw} (expected WIDTHxHEIGHT)`);
@@ -144,4 +189,28 @@ function parseViewport(raw: string): { width: number; height: number } {
 function toStringArray(value: string | string[] | undefined): string[] {
   if (!value) return [];
   return Array.isArray(value) ? value : [value];
+}
+
+// `--block analytics|ads|fonts` (repeatable) を CrawlOptions の 2 配列に展開する。
+// 未知のプリセットは早期に弾いて usage を出す (誤入力の sink を作らない)。
+function blockOverrides(
+  raw: string | string[] | undefined,
+): { blockResourceTypes: string[]; blockUrlPatterns: string[] } | object {
+  const presets = toStringArray(raw);
+  if (presets.length === 0) return {};
+  const allowed: readonly string[] = BLOCK_PRESETS;
+  const unknown = presets.filter((p) => !allowed.includes(p));
+  if (unknown.length > 0) {
+    log.error(`unknown --block preset: ${unknown.join(', ')} (allowed: ${allowed.join(', ')})`);
+    process.exit(1);
+  }
+  return expandBlockPresets(presets);
+}
+
+function parseCacheMode(raw: string): CrawlOptions['cacheMode'] {
+  const parsed = CrawlOptions.shape.cacheMode.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(`invalid --cache-mode: ${raw} (expected cold|warm|disabled)`);
+  }
+  return parsed.data;
 }
