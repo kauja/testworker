@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import { ApiError, fetchRuns } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { NewRunForm } from '@/components/new-run-form';
 import { RetryButton } from '@/components/retry-button';
+import { RunsAutoRefresh } from '@/components/runs-auto-refresh';
 import { TimeStamp } from '@/components/time-stamp';
 
 interface PageError {
@@ -22,28 +24,17 @@ export default async function HomePage() {
       error = { kind: 'http', message: e instanceof Error ? e.message : String(e) };
     }
   }
+  const hasActiveRun = runs.some((r) => r.run.status === 'queued' || r.run.status === 'running');
 
   return (
     <div className="mx-auto max-w-screen-2xl px-6 py-10">
-      <div className="mb-8 flex items-end justify-between gap-4">
-        <div>
+      {hasActiveRun && <RunsAutoRefresh />}
+      <div className="mb-8 grid gap-4 xl:grid-cols-[minmax(220px,360px)_1fr] xl:items-end">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">Runs</h1>
-          <p className="mt-1 text-sm text-ink-muted">クロール結果の一覧。新規実行は CLI から:</p>
-          <ul className="mt-2 space-y-1 text-xs text-ink-muted">
-            <li>
-              <code className="rounded bg-bg-panel px-1.5 py-0.5 font-mono text-[12px] text-ink">
-                make crawl URL=https://example.com
-              </code>{' '}
-              — 認証不要・即動く 30 秒例
-            </li>
-            <li>
-              <code className="rounded bg-bg-panel px-1.5 py-0.5 font-mono text-[12px] text-ink">
-                make crawl URL=http://host.docker.internal:3000
-              </code>{' '}
-              — ホスト上で動いているアプリ (Docker 内から見るため <code>host.docker.internal</code>)
-            </li>
-          </ul>
+          <p className="mt-1 text-sm text-ink-muted">クロール結果と新規 Run。</p>
         </div>
+        <NewRunForm />
       </div>
 
       {error && <ApiErrorBanner error={error} />}

@@ -11,9 +11,13 @@ async function main(): Promise<void> {
       url: { type: 'string' },
       'max-depth': { type: 'string' },
       'max-pages': { type: 'string' },
+      'nav-timeout-ms': { type: 'string' },
+      'wait-after-nav-ms': { type: 'string' },
       'storage-state': { type: 'string' },
       'login-script': { type: 'string' },
       'no-same-origin': { type: 'boolean', default: false },
+      'no-respect-robots': { type: 'boolean', default: false },
+      'no-web-vitals': { type: 'boolean', default: false },
     },
     allowPositionals: true,
   });
@@ -33,9 +37,13 @@ async function main(): Promise<void> {
     startUrl,
     ...(values['max-depth'] ? { maxDepth: Number(values['max-depth']) } : {}),
     ...(values['max-pages'] ? { maxPages: Number(values['max-pages']) } : {}),
+    ...(values['nav-timeout-ms'] ? { navTimeoutMs: Number(values['nav-timeout-ms']) } : {}),
+    ...(values['wait-after-nav-ms'] ? { waitAfterNavMs: Number(values['wait-after-nav-ms']) } : {}),
     ...(values['storage-state'] ? { storageStatePath: values['storage-state'] } : {}),
     ...(values['login-script'] ? { loginScriptPath: values['login-script'] } : {}),
     ...(values['no-same-origin'] ? { sameOriginOnly: false } : {}),
+    ...(values['no-respect-robots'] ? { respectRobots: false } : {}),
+    ...(values['no-web-vitals'] ? { captureWebVitals: false } : {}),
   };
 
   const db = openDb(env.dbPath);
