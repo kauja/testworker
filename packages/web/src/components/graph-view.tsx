@@ -101,6 +101,14 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
               </a>
             </>
           )}
+          <span className="text-ink-faint">·</span>
+          <a
+            href={`/runs/${graph.run.id}/report`}
+            className="text-ink-muted hover:text-accent hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+            title="静的レポート (印刷 / PDF 保存) Intent #127"
+          >
+            report →
+          </a>
         </div>
         <ReactFlow
           nodes={nodes}
