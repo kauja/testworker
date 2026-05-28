@@ -11,10 +11,20 @@ describe('CrawlOptions', () => {
       respectRobots: true,
       navTimeoutMs: 15_000,
       waitAfterNavMs: 500,
+      waitStrategy: 'load',
       viewport: { width: 1280, height: 800 },
       includeUrlPatterns: [],
       excludeUrlPatterns: [],
       captureWebVitals: true,
+      autoScroll: false,
+      autoScrollMaxSteps: 10,
+      autoScrollDelayMs: 400,
+      blockResourceTypes: [],
+      blockUrlPatterns: [],
+      cacheMode: 'warm',
+      networkThrottle: 'none',
+      cpuThrottle: 1,
+      deviceProfile: 'desktop',
     });
   });
 

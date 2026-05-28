@@ -3,6 +3,22 @@ import { z } from 'zod';
 export const RunStatus = z.enum(['queued', 'running', 'completed', 'failed', 'canceled']);
 export type RunStatus = z.infer<typeof RunStatus>;
 
+/**
+ * page.goto の waitUntil に渡す navigation 完了判定 (Issue #200)。
+ * - load: load イベントまで待つ (従来の挙動)
+ * - domcontentloaded: DOMContentLoaded まで (最速、 sub-resource を待たない)
+ * - networkidle: ネットワークが落ち着くまで (SPA / 遅延ロード向け、 最も遅い)
+ */
+export const WaitStrategy = z.enum(['load', 'domcontentloaded', 'networkidle']);
+export type WaitStrategy = z.infer<typeof WaitStrategy>;
+
+/**
+ * Network throttling のプリセット (Issue #197)。 CDP の Network.emulateNetworkConditions
+ * に展開する。 'none' は throttling 無効 (= CDP を呼ばない)。
+ */
+export const NetworkThrottlePreset = z.enum(['none', 'offline', 'slow-3g', 'fast-3g']);
+export type NetworkThrottlePreset = z.infer<typeof NetworkThrottlePreset>;
+
 export const NavigationTrigger = z.enum([
   'initial',
   'link',
@@ -13,6 +29,15 @@ export const NavigationTrigger = z.enum([
   'spa-dom',
 ]);
 export type NavigationTrigger = z.infer<typeof NavigationTrigger>;
+
+/**
+ * Device / Viewport プリセット (Issue #196)。 named preset から viewport / userAgent /
+ * deviceScaleFactor を解決して Playwright context に渡す。
+ * `desktop` (default) は完全 passthrough = 既存 `viewport` / `userAgent` をそのまま使い、
+ * 旧 run との後方互換を保つ。 それ以外の profile は viewport / UA / DSF を上書きする。
+ */
+export const DeviceProfile = z.enum(['desktop', 'iphone-14', 'pixel-7', 'ipad-mini']);
+export type DeviceProfile = z.infer<typeof DeviceProfile>;
 
 export const CrawlOptions = z.object({
   startUrl: z.string().url(),
@@ -26,15 +51,75 @@ export const CrawlOptions = z.object({
   respectRobots: z.boolean().default(true),
   navTimeoutMs: z.number().int().min(1000).max(120_000).default(15_000),
   waitAfterNavMs: z.number().int().min(0).max(10_000).default(500),
+  /**
+   * page.goto の waitUntil。 default 'load' で従来挙動を維持 (後方互換)。
+   * networkidle は navTimeoutMs を超えやすいので timeout と整合させて使う。
+   */
+  waitStrategy: WaitStrategy.default('load'),
   viewport: z
     .object({ width: z.number().int().positive(), height: z.number().int().positive() })
     .default({ width: 1280, height: 800 }),
   storageStatePath: z.string().optional(),
   loginScriptPath: z.string().optional(),
+  /**
+   * 各ページ評価前に `context.addInitScript` で注入する JS/TS ファイルのパス (Issue #203)。
+   * loginScript と違い動的 import せず、 ファイル内容を文字列として addInitScript に渡す
+   * (=ブラウザのページコンテキストで実行、 Node ホストでは実行しない)。 absent = 注入なし
+   * (storageStatePath / loginScriptPath と同様 optional で後方互換)。
+   * 秘密値 (token / password 等) はクライアントに露出するためここに注入しないこと。
+   */
+  injectScriptPath: z.string().optional(),
   includeUrlPatterns: z.array(z.string()).default([]),
   excludeUrlPatterns: z.array(z.string()).default([]),
   userAgent: z.string().optional(),
   captureWebVitals: z.boolean().default(true),
+  /**
+   * 各ページ訪問後に段階的に scrollBy して infinite scroll / lazy load を発火させるか (Issue #199)。
+   * default false (既存 run の挙動を変えない / 後方互換)。 true にすると signature 計算前に
+   * autoScrollMaxSteps 回まで下方向スクロールし、 毎ステップ autoScrollDelayMs 待つ。
+   * ページ最下部に到達するか、 スクロール高さが伸びなくなったら早期終了する。
+   */
+  autoScroll: z.boolean().default(false),
+  /** autoScroll 有効時の最大スクロールステップ数。 default 10 (上限 100)。 */
+  autoScrollMaxSteps: z.number().int().min(1).max(100).default(10),
+  /** autoScroll の各ステップ後の待機 (lazy load の発火待ち)。 default 400ms (上限 10s)。 */
+  autoScrollDelayMs: z.number().int().min(0).max(10_000).default(400),
+  /**
+   * クロール中に abort する resourceType の配列 (Issue #202)。 Playwright の
+   * `request.resourceType()` と完全一致でブロック (例: `font` / `image` / `media`)。
+   * default [] = ブロック無し (既存 run と完全後方互換)。
+   */
+  blockResourceTypes: z.array(z.string()).default([]),
+  /**
+   * クロール中に abort する URL の正規表現文字列配列 (Issue #202)。 analytics / ads は
+   * resourceType で括れない (script / xhr / fetch として読み込まれる) ため、 ドメインを
+   * パターンで弾く。 `includeUrlPatterns` と同じく `new RegExp(p).test(url)` で評価。
+   * default [] = ブロック無し。
+   */
+  blockUrlPatterns: z.array(z.string()).default([]),
+  /**
+   * Issue #205: HTTP キャッシュ制御。 `warm` (既定) はブラウザ既定の Cache-Control 挙動。
+   * `disabled` は CDP Network.setCacheDisabled で全リクエストをキャッシュ無視。
+   * `cold` は開始前にブラウザキャッシュ + Cookie をクリアしてから disabled と同じ扱い。
+   * 旧 run (フィールド追加前) は default の warm として解釈される。
+   */
+  cacheMode: z.enum(['cold', 'warm', 'disabled']).default('warm'),
+  /**
+   * Network throttling プリセット (Issue #197)。 default 'none' (絞らない)。
+   * 'offline' は完全オフライン、 'slow-3g' / 'fast-3g' は CDP の標準値で帯域 / RTT を制限。
+   */
+  networkThrottle: NetworkThrottlePreset.default('none'),
+  /**
+   * CPU throttling 倍率 (Issue #197)。 1 = 絞らない (default)、 4 = 1/4 の速度。
+   * CDP の Emulation.setCPUThrottlingRate に渡す。 1 のときは CDP を呼ばない。
+   */
+  cpuThrottle: z.number().min(1).max(20).default(1),
+  /**
+   * Device / Viewport プリセット (Issue #196)。 default `desktop` は passthrough で
+   * 既存挙動を維持。 非 default の profile は viewport / userAgent / deviceScaleFactor を
+   * 上書きする (実 viewport は runner 側の resolveDeviceProfile が決定)。
+   */
+  deviceProfile: DeviceProfile.default('desktop'),
 });
 export type CrawlOptions = z.infer<typeof CrawlOptions>;
 
