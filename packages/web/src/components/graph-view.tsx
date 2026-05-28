@@ -112,7 +112,7 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
           <MiniMap pannable zoomable nodeColor="#222831" maskColor="rgba(11,13,16,0.7)" />
         </ReactFlow>
       </div>
-      <PageDetailPanel pageId={selectedId} />
+      <PageDetailPanel pageId={selectedId} onSelectPage={setSelectedId} />
     </div>
   );
 }
