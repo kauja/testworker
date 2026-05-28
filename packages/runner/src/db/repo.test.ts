@@ -75,6 +75,7 @@ const run = {
     respectRobots: true,
     navTimeoutMs: 15_000,
     waitAfterNavMs: 500,
+    waitStrategy: 'load' as const,
     viewport: { width: 1280, height: 800 },
     includeUrlPatterns: [],
     excludeUrlPatterns: [],
