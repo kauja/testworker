@@ -19,7 +19,7 @@ export interface PageSignature {
   structureHash: string;
 }
 
-const STRUCTURE_SCRIPT = `() => {
+export const STRUCTURE_SCRIPT = `() => {
   // id は SPA で動的に発番されることが多い（user-1234, render-uuid 等）。
   // 完全に外すと情報量が落ちるので、長い数字列・hex 列を含む id は弾く。
   const STABLE_ATTRS = ['role', 'data-testid', 'data-test', 'aria-label', 'name'];
