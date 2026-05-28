@@ -20,6 +20,9 @@ export function optionsFromEnv(startUrl: string): CrawlOptions {
     respectRobots: boolFromEnv('RESPECT_ROBOTS'),
     navTimeoutMs: numberFromEnv('NAV_TIMEOUT_MS'),
     waitAfterNavMs: numberFromEnv('WAIT_AFTER_NAV_MS'),
+    viewport: viewportFromEnv(),
+    includeUrlPatterns: listFromEnv('INCLUDE_URL_PATTERNS'),
+    excludeUrlPatterns: listFromEnv('EXCLUDE_URL_PATTERNS'),
     captureWebVitals: boolFromEnv('CAPTURE_WEB_VITALS'),
     storageStatePath: process.env.STORAGE_STATE_PATH || undefined,
     loginScriptPath: process.env.LOGIN_SCRIPT_PATH || undefined,
@@ -38,4 +41,19 @@ function boolFromEnv(key: string): boolean | undefined {
   const raw = process.env[key];
   if (raw == null) return undefined;
   return raw === '1' || raw.toLowerCase() === 'true';
+}
+
+function viewportFromEnv(): { width: number; height: number } | undefined {
+  const width = numberFromEnv('VIEWPORT_WIDTH');
+  const height = numberFromEnv('VIEWPORT_HEIGHT');
+  return width && height ? { width, height } : undefined;
+}
+
+function listFromEnv(key: string): string[] | undefined {
+  const raw = process.env[key];
+  if (!raw) return undefined;
+  return raw
+    .split(/\r?\n|,/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }

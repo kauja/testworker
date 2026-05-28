@@ -22,6 +22,10 @@ export function buildRunnerCommand(options: RunLaunchInput): RunnerCommand {
   args.push('--max-pages', String(options.maxPages));
   args.push('--nav-timeout-ms', String(options.navTimeoutMs));
   args.push('--wait-after-nav-ms', String(options.waitAfterNavMs));
+  args.push('--viewport', `${options.viewport.width}x${options.viewport.height}`);
+  for (const pattern of options.includeUrlPatterns) args.push('--include-pattern', pattern);
+  for (const pattern of options.excludeUrlPatterns) args.push('--exclude-pattern', pattern);
+  if (options.userAgent) args.push('--user-agent', options.userAgent);
   if (!options.sameOriginOnly) args.push('--no-same-origin');
   if (!options.respectRobots) args.push('--no-respect-robots');
   if (!options.captureWebVitals) args.push('--no-web-vitals');
@@ -37,6 +41,11 @@ export function buildRunnerCommand(options: RunLaunchInput): RunnerCommand {
       MAX_PAGES: String(options.maxPages),
       NAV_TIMEOUT_MS: String(options.navTimeoutMs),
       WAIT_AFTER_NAV_MS: String(options.waitAfterNavMs),
+      VIEWPORT_WIDTH: String(options.viewport.width),
+      VIEWPORT_HEIGHT: String(options.viewport.height),
+      INCLUDE_URL_PATTERNS: options.includeUrlPatterns.join('\n'),
+      EXCLUDE_URL_PATTERNS: options.excludeUrlPatterns.join('\n'),
+      USER_AGENT: options.userAgent ?? '',
       SAME_ORIGIN_ONLY: options.sameOriginOnly ? 'true' : 'false',
       RESPECT_ROBOTS: options.respectRobots ? 'true' : 'false',
       CAPTURE_WEB_VITALS: options.captureWebVitals ? 'true' : 'false',

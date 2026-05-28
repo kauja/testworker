@@ -46,6 +46,10 @@ export const RunLaunchInput = CrawlOptions.pick({
   respectRobots: true,
   navTimeoutMs: true,
   waitAfterNavMs: true,
+  viewport: true,
+  includeUrlPatterns: true,
+  excludeUrlPatterns: true,
+  userAgent: true,
   captureWebVitals: true,
 });
 export type RunLaunchInput = z.infer<typeof RunLaunchInput>;
