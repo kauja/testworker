@@ -11,6 +11,10 @@ describe('buildRunnerCommand', () => {
       respectRobots: true,
       navTimeoutMs: 20_000,
       waitAfterNavMs: 250,
+      viewport: { width: 1440, height: 900 },
+      includeUrlPatterns: ['/docs'],
+      excludeUrlPatterns: ['/admin'],
+      userAgent: 'testworker-smoke',
       captureWebVitals: true,
     });
 
@@ -30,9 +34,19 @@ describe('buildRunnerCommand', () => {
       '20000',
       '--wait-after-nav-ms',
       '250',
+      '--viewport',
+      '1440x900',
+      '--include-pattern',
+      '/docs',
+      '--exclude-pattern',
+      '/admin',
+      '--user-agent',
+      'testworker-smoke',
     ]);
     expect(cmd.env.START_URL).toBe('https://example.com');
     expect(cmd.env.SAME_ORIGIN_ONLY).toBe('true');
+    expect(cmd.env.VIEWPORT_WIDTH).toBe('1440');
+    expect(cmd.env.INCLUDE_URL_PATTERNS).toBe('/docs');
   });
 
   it('passes explicit opt-outs to the runner CLI', () => {
@@ -44,6 +58,9 @@ describe('buildRunnerCommand', () => {
       respectRobots: false,
       navTimeoutMs: 1000,
       waitAfterNavMs: 0,
+      viewport: { width: 1280, height: 800 },
+      includeUrlPatterns: [],
+      excludeUrlPatterns: [],
       captureWebVitals: false,
     });
 
