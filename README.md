@@ -1,8 +1,16 @@
 # testworker
 
+[![CI](https://github.com/kauja/testworker/actions/workflows/ci.yml/badge.svg)](https://github.com/kauja/testworker/actions/workflows/ci.yml)
+[![secret-scan](https://github.com/kauja/testworker/actions/workflows/secret-scan.yml/badge.svg)](https://github.com/kauja/testworker/actions/workflows/secret-scan.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-22-brightgreen.svg)](https://nodejs.org/)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
 > Web アプリを自動巡回し、コンソール・ネットワーク・エラーを収集して、画面遷移図として可視化する OSS。
 
 **testworker** はローカルあるいはステージングの Web アプリを Playwright で自動巡回し、各画面の **コンソールログ・ネットワーク・JS エラー・スクリーンショット** を収集して、**画面遷移図** として可視化する OSS ツールです。日本語 UI 中心で、個人開発者や小規模チームの「自分のアプリの全体像を一目で把握したい」というニーズに応えます。SPA も「URL + DOM 構造ハッシュ」で別状態として識別します。
+
+> 📸 **Screenshots / Demo GIF**: `docs/images/runs-list.png`, `docs/images/graph-view.png`, `docs/images/demo.gif` を配置すると下の Quick start 上に展開されます (Issue #105)。 binary は最小化して `docs/images/README.md` に出典明記。
 
 - 🕸 BFS クロールで自動巡回（同一オリジン / 深さ / ページ数で制御）
 - 📸 ページごとにスクリーンショット
