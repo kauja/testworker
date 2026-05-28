@@ -106,7 +106,10 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
                 >
                   <td className="px-2 py-1.5 font-mono">{p.depth}</td>
                   <td className="px-2 py-1.5">
-                    <Link href={baseHref} className="block hover:text-accent print:hover:text-inherit">
+                    <Link
+                      href={baseHref}
+                      className="block hover:text-accent print:hover:text-inherit"
+                    >
                       <div className="font-medium" title={p.title}>
                         {labels.get(p.id) ?? p.title ?? '(untitled)'}
                       </div>

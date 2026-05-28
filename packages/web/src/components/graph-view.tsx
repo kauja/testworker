@@ -112,10 +112,7 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
     <div className="relative grid h-full grid-cols-[1fr_360px]">
       <div className="flex h-full flex-col">
         {isFailed && (
-          <div
-            role="alert"
-            className="border-b border-bad/40 bg-bad/10 px-6 py-3 text-xs text-bad"
-          >
+          <div role="alert" className="border-b border-bad/40 bg-bad/10 px-6 py-3 text-xs text-bad">
             <div className="flex items-baseline justify-between gap-3">
               <div className="font-medium uppercase tracking-wider">
                 この run は {graph.run.status} 状態で終了しました
@@ -146,83 +143,83 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
           </div>
         )}
         <div className="relative flex-1">
-        <div className="absolute left-4 top-4 z-10 flex items-center gap-3 rounded-md border border-line bg-bg-panel/80 px-3 py-2 text-xs backdrop-blur">
-          <span className="truncate text-ink-muted">{graph.run.startUrl}</span>
-          <span className="text-ink-faint">·</span>
-          <span className="text-ink">{graph.pages.length} pages</span>
-          <span className="text-ink-faint">·</span>
-          <span className="text-ink">{graph.edges.length} edges</span>
-          {errorTotal > 0 && (
-            <>
-              <span className="text-ink-faint">·</span>
-              <a
-                href={`/runs/${graph.run.id}/errors`}
-                className="text-bad hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-bad"
-                title="エラーグループ表示 (Issue #88)"
-              >
-                {errorTotal} errors →
-              </a>
-            </>
-          )}
-          <span className="text-ink-faint">·</span>
-          <a
-            href={`/runs/${graph.run.id}/diff`}
-            className="text-accent hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-            title="1 つ前の run との差分を表示 (Intent #125)"
-          >
-            diff →
-          </a>
-          <span className="text-ink-faint">·</span>
-          <a
-            href={`/runs/${graph.run.id}/report`}
-            className="text-ink-muted hover:text-accent hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-            title="静的レポート (印刷 / PDF 保存) Intent #127"
-          >
-            report →
-          </a>
-        </div>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          fitView
-          // 初期表示で graph 全体が画面に収まるようにする (#166)。
-          // padding を 0.1 まで絞ると 22 pages の run でも横方向の空白が消える。
-          fitViewOptions={{ padding: 0.1 }}
-          minZoom={0.2}
-          maxZoom={2}
-          proOptions={{ hideAttribution: true }}
-          onNodeClick={(_, n) => setSelectedId(n.id)}
-          aria-label="画面遷移グラフ (screen transition graph)"
-        >
-          <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#1c222b" />
-          <Controls
-            showInteractive={false}
-            // Next.js DevTools の N アイコンと左下端で被るのを避ける (#166)。
-            position="bottom-right"
-          />
-          {mounted && minimapVisible && (
-            <MiniMap
-              pannable
-              zoomable
-              nodeColor="#222831"
-              maskColor="rgba(11,13,16,0.7)"
-              position="top-right"
-              style={{ width: 160, height: 110 }}
-            />
-          )}
-          <Panel position="bottom-left">
-            <button
-              type="button"
-              onClick={() => setMinimapVisible((v) => !v)}
-              className="rounded border border-line bg-bg-panel/80 px-2 py-1 text-[10px] uppercase tracking-wider text-ink-muted backdrop-blur hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-              aria-pressed={minimapVisible}
-              title="minimap の表示を切り替え"
+          <div className="absolute left-4 top-4 z-10 flex items-center gap-3 rounded-md border border-line bg-bg-panel/80 px-3 py-2 text-xs backdrop-blur">
+            <span className="truncate text-ink-muted">{graph.run.startUrl}</span>
+            <span className="text-ink-faint">·</span>
+            <span className="text-ink">{graph.pages.length} pages</span>
+            <span className="text-ink-faint">·</span>
+            <span className="text-ink">{graph.edges.length} edges</span>
+            {errorTotal > 0 && (
+              <>
+                <span className="text-ink-faint">·</span>
+                <a
+                  href={`/runs/${graph.run.id}/errors`}
+                  className="text-bad hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-bad"
+                  title="エラーグループ表示 (Issue #88)"
+                >
+                  {errorTotal} errors →
+                </a>
+              </>
+            )}
+            <span className="text-ink-faint">·</span>
+            <a
+              href={`/runs/${graph.run.id}/diff`}
+              className="text-accent hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+              title="1 つ前の run との差分を表示 (Intent #125)"
             >
-              {minimapVisible ? 'minimap: on' : 'minimap: off'}
-            </button>
-          </Panel>
-        </ReactFlow>
+              diff →
+            </a>
+            <span className="text-ink-faint">·</span>
+            <a
+              href={`/runs/${graph.run.id}/report`}
+              className="text-ink-muted hover:text-accent hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+              title="静的レポート (印刷 / PDF 保存) Intent #127"
+            >
+              report →
+            </a>
+          </div>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            fitView
+            // 初期表示で graph 全体が画面に収まるようにする (#166)。
+            // padding を 0.1 まで絞ると 22 pages の run でも横方向の空白が消える。
+            fitViewOptions={{ padding: 0.1 }}
+            minZoom={0.2}
+            maxZoom={2}
+            proOptions={{ hideAttribution: true }}
+            onNodeClick={(_, n) => setSelectedId(n.id)}
+            aria-label="画面遷移グラフ (screen transition graph)"
+          >
+            <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#1c222b" />
+            <Controls
+              showInteractive={false}
+              // Next.js DevTools の N アイコンと左下端で被るのを避ける (#166)。
+              position="bottom-right"
+            />
+            {mounted && minimapVisible && (
+              <MiniMap
+                pannable
+                zoomable
+                nodeColor="#222831"
+                maskColor="rgba(11,13,16,0.7)"
+                position="top-right"
+                style={{ width: 160, height: 110 }}
+              />
+            )}
+            <Panel position="bottom-left">
+              <button
+                type="button"
+                onClick={() => setMinimapVisible((v) => !v)}
+                className="rounded border border-line bg-bg-panel/80 px-2 py-1 text-[10px] uppercase tracking-wider text-ink-muted backdrop-blur hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+                aria-pressed={minimapVisible}
+                title="minimap の表示を切り替え"
+              >
+                {minimapVisible ? 'minimap: on' : 'minimap: off'}
+              </button>
+            </Panel>
+          </ReactFlow>
         </div>
       </div>
       <PageDetailPanel pageId={selectedId} onSelectPage={setSelectedId} />
