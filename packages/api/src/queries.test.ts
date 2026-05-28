@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { log } from '@testworker/shared';
 import { pickValidOptionFields, rowToRun } from './queries.js';
 
 const baseRow = (options: unknown, overrides: Partial<Parameters<typeof rowToRun>[0]> = {}) => ({
@@ -36,7 +37,7 @@ describe('rowToRun', () => {
   });
 
   it('falls back to defaults when options_json is malformed', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => undefined);
 
     const run = rowToRun(baseRow('{bad json'));
 
@@ -47,14 +48,14 @@ describe('rowToRun', () => {
       sameOriginOnly: true,
     });
     expect(warn).toHaveBeenCalledWith(
-      '[testworker-api] run run_1: options_json JSON.parse failed',
-      expect.any(String),
+      expect.objectContaining({ runId: 'run_1', err: expect.any(String) }),
+      'options_json JSON.parse failed',
     );
     warn.mockRestore();
   });
 
   it('keeps valid fields when one option field is invalid', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => undefined);
 
     const run = rowToRun(
       baseRow({
@@ -75,7 +76,7 @@ describe('rowToRun', () => {
   });
 
   it('preserves non-url legacy start_url in the final fallback', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => undefined);
 
     const run = rowToRun(baseRow({ maxPages: 9 }, { start_url: 'localhost:3000' }));
 

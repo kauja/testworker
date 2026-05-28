@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
+import { log } from '@testworker/shared';
 import { openDb } from './db/client.js';
 import { migrate } from './db/migrate.js';
 import { loadRunnerEnv, optionsFromEnv } from './config.js';
@@ -20,7 +21,7 @@ async function main(): Promise<void> {
 
   const startUrl = values.url ?? positionals[0] ?? process.env.START_URL;
   if (!startUrl) {
-    console.error('usage: testworker-runner <url> [--max-depth N] [--max-pages N] ...');
+    log.error('usage: testworker-runner <url> [--max-depth N] [--max-pages N] ...');
     process.exit(1);
   }
 
@@ -40,12 +41,12 @@ async function main(): Promise<void> {
 
   const db = openDb(env.dbPath);
   try {
-    console.log(`[testworker] crawl start: ${startUrl}`);
-    console.log(`  depth=${overrides.maxDepth} pages=${overrides.maxPages}`);
-    const report = await runCrawl(db, env.dataDir, overrides);
-    console.log(
-      `[testworker] done: run=${report.run.id} pages=${report.pages} edges=${report.edges}`,
+    log.info(
+      { startUrl, maxDepth: overrides.maxDepth, maxPages: overrides.maxPages },
+      'crawl start',
     );
+    const report = await runCrawl(db, env.dataDir, overrides);
+    log.info({ runId: report.run.id, pages: report.pages, edges: report.edges }, 'crawl done');
   } finally {
     db.close();
   }
@@ -96,20 +97,20 @@ main().catch((err) => {
     },
   ];
 
-  console.error('[testworker] FAILED.');
-  console.error(`  message: ${message}`);
+  log.error({ message }, 'crawl FAILED');
   for (const h of HINTS) {
     if (h.pattern.test(message)) {
-      console.error(`[testworker hint] ${h.explain}`);
-      console.error(`[testworker hint] 次のアクション: ${h.nextAction}`);
-      console.error(`[testworker hint] 参考: docs/troubleshooting.md「${h.section}」`);
+      log.error(
+        { explain: h.explain, nextAction: h.nextAction, section: h.section },
+        'troubleshooting hint',
+      );
       process.exit(1);
     }
   }
   // 一致しなかった場合は raw stack を出して devloop を阻害しない
-  if (stack) console.error(stack);
-  console.error(
-    '[testworker hint] 既知の失敗パターンに該当しません。 docs/troubleshooting.md を参照するか、 上記 stack を Issue に貼って報告してください。',
+  if (stack) log.error({ stack }, 'raw stack trace');
+  log.error(
+    '既知の失敗パターンに該当しません。 docs/troubleshooting.md を参照するか、 上記 stack を Issue に貼って報告してください。',
   );
   process.exit(1);
 });

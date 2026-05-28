@@ -4,6 +4,7 @@ import { Readable } from 'node:stream';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serve } from '@hono/node-server';
+import { log } from '@testworker/shared';
 import { openReadDb } from './db.js';
 import {
   getErrorGroups,
@@ -42,11 +43,12 @@ function ensureDb(): typeof dbInstance {
   if (!existsSync(DB_PATH)) return null;
   try {
     dbInstance = openReadDb(DB_PATH);
-    console.log(`[testworker-api] DB opened: ${DB_PATH}`);
+    log.info({ dbPath: DB_PATH }, 'DB opened');
     return dbInstance;
   } catch (err) {
-    console.warn(
-      `[testworker-api] DB open failed (will retry): ${err instanceof Error ? err.message : String(err)}`,
+    log.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      'DB open failed (will retry)',
     );
     return null;
   }
@@ -56,10 +58,9 @@ async function pollUntilDbReady(): Promise<void> {
   let waitedLogged = false;
   while (!ensureDb()) {
     if (!waitedLogged) {
-      console.warn(
-        `[testworker-api] DB not found at ${DB_PATH}. ` +
-          `Run \`make migrate\` (or \`pnpm --filter @testworker/runner run db:migrate\`) to initialize. ` +
-          `/runs etc. will return 503 until ready.`,
+      log.warn(
+        { dbPath: DB_PATH },
+        'DB not found. Run `make migrate` to initialize. /runs etc. will return 503 until ready.',
       );
       waitedLogged = true;
     }
@@ -192,5 +193,5 @@ app.get('/assets/*', (c) => {
 });
 
 serve({ fetch: app.fetch, port: PORT }, (info) => {
-  console.log(`[testworker-api] listening on http://0.0.0.0:${info.port}`);
+  log.info({ port: info.port }, 'api listening');
 });

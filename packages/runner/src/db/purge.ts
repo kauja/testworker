@@ -23,6 +23,7 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { log } from '@testworker/shared';
 import { openDb } from './client.js';
 import { loadRunnerEnv } from '../config.js';
 
@@ -131,23 +132,26 @@ async function main(): Promise<void> {
     dryRun: Boolean(values['dry-run']),
   };
   if (opts.keepLast == null && opts.olderThanMs == null) {
-    console.error('usage: purge --keep-last N | --older-than <30d|24h|90m> [--dry-run]');
+    log.error('usage: purge --keep-last N | --older-than <30d|24h|90m> [--dry-run]');
     process.exit(2);
   }
   if (opts.keepLast != null && (!Number.isInteger(opts.keepLast) || opts.keepLast < 0)) {
-    console.error('--keep-last must be a non-negative integer');
+    log.error('--keep-last must be a non-negative integer');
     process.exit(2);
   }
 
   const env = loadRunnerEnv();
   const result = await purge(env.dbPath, env.dataDir, opts);
-  const action = result.dryRun ? 'would delete' : 'deleted';
-  console.log(
-    `[testworker purge] scanned=${result.scanned} ${action}=${result.deleted.length} kept=${result.kept}`,
+  log.info(
+    {
+      scanned: result.scanned,
+      deletedCount: result.deleted.length,
+      kept: result.kept,
+      dryRun: result.dryRun,
+      deletedIds: result.deleted,
+    },
+    result.dryRun ? 'purge dry-run' : 'purge complete',
   );
-  for (const id of result.deleted) {
-    console.log(`  - ${id}`);
-  }
 }
 
 const isMain = (() => {

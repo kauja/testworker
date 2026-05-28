@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import {
+  childLog,
   CrawlOptions,
   newEdgeId,
   newPageStateId,
@@ -54,6 +55,8 @@ export async function runCrawl(
   const options = CrawlOptions.parse(rawOptions);
   const runId = newRunId();
   const startedAt = new Date().toISOString();
+  // child logger に runId を bake して、 全 log 行に runId を載せる (Issue #92)。
+  const clog = childLog({ runId });
   const run: Run = {
     id: runId,
     startUrl: options.startUrl,
@@ -141,7 +144,7 @@ export async function runCrawl(
         }
         const rules = await getRobots(taskOrigin);
         if (!isAllowedByRobots(rules, taskPath)) {
-          console.warn(`[testworker] skipped by robots.txt: ${task.url}`);
+          clog.warn({ url: task.url }, 'skipped by robots.txt');
           continue;
         }
       }
@@ -149,7 +152,7 @@ export async function runCrawl(
       try {
         await page.goto(task.url, { waitUntil: 'load' });
       } catch (err) {
-        console.warn(`[testworker] nav failed: ${task.url} (${(err as Error).message})`);
+        clog.warn({ url: task.url, err: (err as Error).message }, 'nav failed');
         // 失敗した遷移中に発生した console / pageerror / request イベントが
         // 次の成功ページの snapshot に紛れ込むのを防ぐため、 buffer を破棄。
         monitors.rotate();
@@ -166,7 +169,7 @@ export async function runCrawl(
           landedOrigin = null;
         }
         if (landedOrigin !== startOrigin) {
-          console.warn(`[testworker] cross-origin redirect skipped: ${task.url} → ${page.url()}`);
+          clog.warn({ from: task.url, to: page.url() }, 'cross-origin redirect skipped');
           monitors.rotate();
           continue;
         }
@@ -208,7 +211,7 @@ export async function runCrawl(
       try {
         await page.screenshot({ path: absScreenshot, fullPage: false });
       } catch (err) {
-        console.warn(`[testworker] screenshot failed: ${(err as Error).message}`);
+        clog.warn({ err: (err as Error).message, pageStateId }, 'screenshot failed');
       }
 
       const snap = monitors.rotate();
