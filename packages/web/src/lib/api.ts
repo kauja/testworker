@@ -13,9 +13,11 @@ async function get<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const apiBase = base;
 
-export const fetchRuns = () => get<RunSummary[]>('/runs');
-export const fetchGraph = (runId: string) => get<GraphPayload>(`/runs/${runId}/graph`);
-export const fetchPage = (pageId: string) => get<PageDetail>(`/pages/${pageId}`);
+export const fetchRuns = (init?: RequestInit) => get<RunSummary[]>('/runs', init);
+export const fetchGraph = (runId: string, init?: RequestInit) =>
+  get<GraphPayload>(`/runs/${runId}/graph`, init);
+export const fetchPage = (pageId: string, init?: RequestInit) =>
+  get<PageDetail>(`/pages/${pageId}`, init);
 
 // 常に CLIENT_BASE (ブラウザ到達可能な URL) を使う。
 // SSR 時にもこの URL を生成して HTML にシリアライズすることで、 ブラウザが直接
