@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
-import { log } from '@testworker/shared';
+import { log, NetworkThrottlePreset } from '@testworker/shared';
 import { openDb } from './db/client.js';
 import { migrate } from './db/migrate.js';
 import { loadRunnerEnv, optionsFromEnv } from './config.js';
@@ -23,6 +23,8 @@ async function main(): Promise<void> {
       'no-same-origin': { type: 'boolean', default: false },
       'no-respect-robots': { type: 'boolean', default: false },
       'no-web-vitals': { type: 'boolean', default: false },
+      'network-throttle': { type: 'string' },
+      'cpu-throttle': { type: 'string' },
     },
     allowPositionals: true,
   });
@@ -57,6 +59,10 @@ async function main(): Promise<void> {
     ...(values['no-same-origin'] ? { sameOriginOnly: false } : {}),
     ...(values['no-respect-robots'] ? { respectRobots: false } : {}),
     ...(values['no-web-vitals'] ? { captureWebVitals: false } : {}),
+    ...(values['network-throttle']
+      ? { networkThrottle: parseNetworkThrottle(values['network-throttle']) }
+      : {}),
+    ...(values['cpu-throttle'] ? { cpuThrottle: Number(values['cpu-throttle']) } : {}),
   };
 
   const db = openDb(env.dbPath);
@@ -134,6 +140,14 @@ main().catch((err) => {
   );
   process.exit(1);
 });
+
+function parseNetworkThrottle(raw: string): NetworkThrottlePreset {
+  const parsed = NetworkThrottlePreset.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(`invalid network-throttle: ${raw} (expected none|offline|slow-3g|fast-3g)`);
+  }
+  return parsed.data;
+}
 
 function parseViewport(raw: string): { width: number; height: number } {
   const match = raw.match(/^(\d+)x(\d+)$/);

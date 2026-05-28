@@ -3,6 +3,13 @@ import { z } from 'zod';
 export const RunStatus = z.enum(['queued', 'running', 'completed', 'failed', 'canceled']);
 export type RunStatus = z.infer<typeof RunStatus>;
 
+/**
+ * Network throttling のプリセット (Issue #197)。 CDP の Network.emulateNetworkConditions
+ * に展開する。 'none' は throttling 無効 (= CDP を呼ばない)。
+ */
+export const NetworkThrottlePreset = z.enum(['none', 'offline', 'slow-3g', 'fast-3g']);
+export type NetworkThrottlePreset = z.infer<typeof NetworkThrottlePreset>;
+
 export const NavigationTrigger = z.enum([
   'initial',
   'link',
@@ -35,6 +42,16 @@ export const CrawlOptions = z.object({
   excludeUrlPatterns: z.array(z.string()).default([]),
   userAgent: z.string().optional(),
   captureWebVitals: z.boolean().default(true),
+  /**
+   * Network throttling プリセット (Issue #197)。 default 'none' (絞らない)。
+   * 'offline' は完全オフライン、 'slow-3g' / 'fast-3g' は CDP の標準値で帯域 / RTT を制限。
+   */
+  networkThrottle: NetworkThrottlePreset.default('none'),
+  /**
+   * CPU throttling 倍率 (Issue #197)。 1 = 絞らない (default)、 4 = 1/4 の速度。
+   * CDP の Emulation.setCPUThrottlingRate に渡す。 1 のときは CDP を呼ばない。
+   */
+  cpuThrottle: z.number().min(1).max(20).default(1),
 });
 export type CrawlOptions = z.infer<typeof CrawlOptions>;
 

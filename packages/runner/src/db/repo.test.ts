@@ -79,6 +79,8 @@ const run = {
     includeUrlPatterns: [],
     excludeUrlPatterns: [],
     captureWebVitals: true,
+    networkThrottle: 'none' as const,
+    cpuThrottle: 1,
   },
   errorMessage: null,
   pagesDone: 0,
