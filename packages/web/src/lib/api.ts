@@ -13,9 +13,11 @@ async function get<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const apiBase = base;
 
-export const fetchRuns = () => get<RunSummary[]>('/runs');
-export const fetchGraph = (runId: string) => get<GraphPayload>(`/runs/${runId}/graph`);
-export const fetchPage = (pageId: string) => get<PageDetail>(`/pages/${pageId}`);
+export const fetchRuns = (init?: RequestInit) => get<RunSummary[]>('/runs', init);
+export const fetchGraph = (runId: string, init?: RequestInit) =>
+  get<GraphPayload>(`/runs/${runId}/graph`, init);
+export const fetchPage = (pageId: string, init?: RequestInit) =>
+  get<PageDetail>(`/pages/${pageId}`, init);
 
 export const assetUrl = (relPath: string) =>
   `${typeof window === 'undefined' ? SERVER_BASE : CLIENT_BASE}/assets/${relPath}`;
