@@ -11,7 +11,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "crawl": "tsx src/cli.ts",
-    "db:migrate": "tsx src/db/migrate.ts"
+    "db:migrate": "tsx src/db/migrate.ts",
+    "purge": "tsx src/db/purge.ts"
   },
   "dependencies": {
     "@testworker/shared": "workspace:*",
