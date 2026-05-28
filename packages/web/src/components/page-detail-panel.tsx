@@ -93,13 +93,42 @@ export function PageDetailPanel({ pageId }: { pageId: string | null }) {
         </div>
       </div>
 
-      <div className="flex gap-1 border-b border-line px-2 pt-2 text-xs">
+      <div
+        role="tablist"
+        aria-label="page detail tabs"
+        onKeyDown={(e) => {
+          // 左右矢印 / Home / End で tab を移動する (Issue #106 / a11y)。
+          // 矢印キーは roving tabindex 的に focus も次タブに移す。
+          const tabs: Tab[] = ['overview', 'console', 'network', 'errors'];
+          const idx = tabs.indexOf(tab);
+          let nextIdx: number | null = null;
+          if (e.key === 'ArrowRight') nextIdx = (idx + 1) % tabs.length;
+          else if (e.key === 'ArrowLeft') nextIdx = (idx - 1 + tabs.length) % tabs.length;
+          else if (e.key === 'Home') nextIdx = 0;
+          else if (e.key === 'End') nextIdx = tabs.length - 1;
+          if (nextIdx == null) return;
+          e.preventDefault();
+          const next = tabs[nextIdx];
+          if (!next) return;
+          setTab(next);
+          // 次の tab button を focus に移す
+          const el = e.currentTarget.querySelector<HTMLButtonElement>(`[data-tab="${next}"]`);
+          el?.focus();
+        }}
+        className="flex gap-1 border-b border-line px-2 pt-2 text-xs"
+      >
         {(['overview', 'console', 'network', 'errors'] as Tab[]).map((t) => (
           <button
             key={t}
+            role="tab"
+            data-tab={t}
+            id={`tab-${t}`}
+            aria-controls={`tabpanel-${t}`}
+            aria-selected={tab === t}
+            tabIndex={tab === t ? 0 : -1}
             onClick={() => setTab(t)}
             className={cn(
-              'rounded-t px-3 py-1.5 capitalize transition-colors',
+              'rounded-t px-3 py-1.5 capitalize transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent',
               tab === t
                 ? 'bg-bg-panel text-ink'
                 : 'text-ink-muted hover:bg-bg-panel/60 hover:text-ink',
@@ -111,7 +140,12 @@ export function PageDetailPanel({ pageId }: { pageId: string | null }) {
       </div>
 
       <div className="flex-1 overflow-auto">
-        {tab === 'overview' && (
+        <div
+          role="tabpanel"
+          id="tabpanel-overview"
+          aria-labelledby="tab-overview"
+          hidden={tab !== 'overview'}
+        >
           <div className="p-4">
             {detail.page.screenshotPath ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -124,10 +158,29 @@ export function PageDetailPanel({ pageId }: { pageId: string | null }) {
               <div className="text-xs text-ink-muted">no screenshot</div>
             )}
           </div>
-        )}
-        {tab === 'console' && <ConsoleTab entries={detail.console} />}
-        {tab === 'network' && <NetworkTab entries={detail.network} />}
-        {tab === 'errors' && (
+        </div>
+        <div
+          role="tabpanel"
+          id="tabpanel-console"
+          aria-labelledby="tab-console"
+          hidden={tab !== 'console'}
+        >
+          {tab === 'console' && <ConsoleTab entries={detail.console} />}
+        </div>
+        <div
+          role="tabpanel"
+          id="tabpanel-network"
+          aria-labelledby="tab-network"
+          hidden={tab !== 'network'}
+        >
+          {tab === 'network' && <NetworkTab entries={detail.network} />}
+        </div>
+        <div
+          role="tabpanel"
+          id="tabpanel-errors"
+          aria-labelledby="tab-errors"
+          hidden={tab !== 'errors'}
+        >
           <ul className="divide-y divide-line text-xs">
             {detail.errors.map((e) => (
               <li key={e.id} className="px-4 py-2">
@@ -145,7 +198,7 @@ export function PageDetailPanel({ pageId }: { pageId: string | null }) {
             ))}
             {detail.errors.length === 0 && <li className="p-4 text-ink-muted">なし</li>}
           </ul>
-        )}
+        </div>
       </div>
     </aside>
   );
