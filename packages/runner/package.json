@@ -7,7 +7,7 @@
     "testworker-runner": "./dist/cli.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp -R src/db/migrations dist/db/",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "crawl": "tsx src/cli.ts",
