@@ -35,7 +35,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Workflow Rules
 
 - **multi-round refactor / 連続 PR**: 1 PR ずつ CI green を確認してから次 PR を開く。連続 push で main を不安定化させない（必要なら手元で `git fetch origin main && git merge origin/main` で追従してから新 PR）
-- **parallel worker subagent**: 並列度は cap（default 2、最大 3）。fan-out 前に対象スコープ（service / package / file 群）の **完全な一覧** をユーザに提示・確認してから起動する（漏れて後追い再実行を避ける）
+- **parallel worker subagent**: 並列度は cap（default 2、最大 3）。fan-out 前に対象スコープ（service / package / file 群）の **完全な一覧** をユーザに提示・確認してから起動する（漏れて後追い再実行を避ける）。**書き込みを伴う並列 worker は必ず worktree で隔離する**（下記）
+- **worktree 隔離（並列開発の必須要件）**: 2 つ以上のエージェント / タスクが同時にファイルを編集するときは、各 worker を独立した git worktree で動かす。
+  - `Agent` tool で起動する書き込み系 subagent は `isolation: "worktree"` を**必ず**指定（読み取りのみの `Explore` 等は省略可）
+  - 手元での並列ブランチ作業は `git worktree add ../testworker-<scope> <branch>` で別ディレクトリに切り出す
+  - 5 件以上の fan-out は `python scripts/orchestrate.py run <plan>.yaml` 経由（`.orchestrate/worktrees/<id>/` で自動隔離）
+  - 完了したら `git worktree remove <path>` / `orchestrate.py cleanup` で必ず片付ける
+  - 詳細・禁止事項・例外は [AGENTS.md「並列開発は worktree で隔離する」](./AGENTS.md#並列開発は-worktree-で隔離する必須) を参照
 - **rate-limit 検知**: worker が API rate-limit に当たったら、当該 worker は backoff（30s → 60s → 120s 指数）、checkpoint を保存してから再開。supervisor は失敗 worker を 1 回まで再起動し、2 回目以降は人間に通知
 - **batch commit**: 関連する変更は 1 commit に束ね、commit message に「何を / なぜ」を書く。`--amend` 禁止、新規 commit を積む
 
