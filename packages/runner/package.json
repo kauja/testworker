@@ -18,6 +18,7 @@
     "@testworker/shared": "workspace:*",
     "better-sqlite3": "^11.3.0",
     "playwright": "^1.49.0",
+    "web-vitals": "^5.2.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

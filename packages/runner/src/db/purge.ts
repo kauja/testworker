@@ -108,7 +108,7 @@ export async function purge(
       try {
         await rm(runDir, { recursive: true, force: true });
       } catch (err) {
-        console.warn(`[testworker purge] FS delete failed for ${runDir}:`, (err as Error).message);
+        log.warn({ runDir, err: (err as Error).message }, 'purge FS delete failed');
       }
     }
     return { scanned: rows.length, deleted: victims, kept, dryRun: false };
@@ -164,7 +164,7 @@ const isMain = (() => {
 })();
 if (isMain) {
   main().catch((err) => {
-    console.error('[testworker purge] failed:', err instanceof Error ? err.message : String(err));
+    log.error({ err: err instanceof Error ? err.message : String(err) }, 'purge failed');
     process.exit(1);
   });
 }

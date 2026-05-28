@@ -12,9 +12,17 @@ async function main(): Promise<void> {
       url: { type: 'string' },
       'max-depth': { type: 'string' },
       'max-pages': { type: 'string' },
+      'nav-timeout-ms': { type: 'string' },
+      'wait-after-nav-ms': { type: 'string' },
+      viewport: { type: 'string' },
+      'include-pattern': { type: 'string', multiple: true },
+      'exclude-pattern': { type: 'string', multiple: true },
+      'user-agent': { type: 'string' },
       'storage-state': { type: 'string' },
       'login-script': { type: 'string' },
       'no-same-origin': { type: 'boolean', default: false },
+      'no-respect-robots': { type: 'boolean', default: false },
+      'no-web-vitals': { type: 'boolean', default: false },
     },
     allowPositionals: true,
   });
@@ -34,9 +42,21 @@ async function main(): Promise<void> {
     startUrl,
     ...(values['max-depth'] ? { maxDepth: Number(values['max-depth']) } : {}),
     ...(values['max-pages'] ? { maxPages: Number(values['max-pages']) } : {}),
+    ...(values['nav-timeout-ms'] ? { navTimeoutMs: Number(values['nav-timeout-ms']) } : {}),
+    ...(values['wait-after-nav-ms'] ? { waitAfterNavMs: Number(values['wait-after-nav-ms']) } : {}),
+    ...(values.viewport ? { viewport: parseViewport(values.viewport) } : {}),
+    ...(values['include-pattern']
+      ? { includeUrlPatterns: toStringArray(values['include-pattern']) }
+      : {}),
+    ...(values['exclude-pattern']
+      ? { excludeUrlPatterns: toStringArray(values['exclude-pattern']) }
+      : {}),
+    ...(values['user-agent'] ? { userAgent: values['user-agent'] } : {}),
     ...(values['storage-state'] ? { storageStatePath: values['storage-state'] } : {}),
     ...(values['login-script'] ? { loginScriptPath: values['login-script'] } : {}),
     ...(values['no-same-origin'] ? { sameOriginOnly: false } : {}),
+    ...(values['no-respect-robots'] ? { respectRobots: false } : {}),
+    ...(values['no-web-vitals'] ? { captureWebVitals: false } : {}),
   };
 
   const db = openDb(env.dbPath);
@@ -114,3 +134,14 @@ main().catch((err) => {
   );
   process.exit(1);
 });
+
+function parseViewport(raw: string): { width: number; height: number } {
+  const match = raw.match(/^(\d+)x(\d+)$/);
+  if (!match) throw new Error(`invalid viewport: ${raw} (expected WIDTHxHEIGHT)`);
+  return { width: Number(match[1]), height: Number(match[2]) };
+}
+
+function toStringArray(value: string | string[] | undefined): string[] {
+  if (!value) return [];
+  return Array.isArray(value) ? value : [value];
+}

@@ -34,8 +34,32 @@ export const CrawlOptions = z.object({
   includeUrlPatterns: z.array(z.string()).default([]),
   excludeUrlPatterns: z.array(z.string()).default([]),
   userAgent: z.string().optional(),
+  captureWebVitals: z.boolean().default(true),
 });
 export type CrawlOptions = z.infer<typeof CrawlOptions>;
+
+export const RunLaunchInput = CrawlOptions.pick({
+  startUrl: true,
+  maxDepth: true,
+  maxPages: true,
+  sameOriginOnly: true,
+  respectRobots: true,
+  navTimeoutMs: true,
+  waitAfterNavMs: true,
+  viewport: true,
+  includeUrlPatterns: true,
+  excludeUrlPatterns: true,
+  userAgent: true,
+  captureWebVitals: true,
+});
+export type RunLaunchInput = z.infer<typeof RunLaunchInput>;
+
+export const RunLaunchResponse = z.object({
+  accepted: z.literal(true),
+  acceptedAt: z.string(),
+  options: RunLaunchInput,
+});
+export type RunLaunchResponse = z.infer<typeof RunLaunchResponse>;
 
 export const Run = z.object({
   id: z.string(),
@@ -45,8 +69,29 @@ export const Run = z.object({
   finishedAt: z.string().nullable(),
   options: CrawlOptions,
   errorMessage: z.string().nullable(),
+  /**
+   * 走行中の進捗 (Issue #86)。 runner が BFS ループで定期更新する。
+   * 旧 run (column 追加前) は default で 0 / null になる。
+   */
+  pagesDone: z.number().int().min(0).default(0),
+  queueSize: z.number().int().min(0).nullable().default(null),
+  currentUrl: z.string().nullable().default(null),
+  /**
+   * Playwright `recordHar` で記録した HAR ファイルへのパス (Issue #87)。
+   * DATA_DIR からの相対パス。 旧 run / 失敗 run / mode:'minimal' を切った run は null。
+   */
+  harPath: z.string().nullable().default(null),
 });
 export type Run = z.infer<typeof Run>;
+
+export const PageMetrics = z.object({
+  lcp: z.number().nonnegative().nullable().optional(),
+  cls: z.number().nonnegative().nullable().optional(),
+  inp: z.number().nonnegative().nullable().optional(),
+  ttfb: z.number().nonnegative().nullable().optional(),
+  fcp: z.number().nonnegative().nullable().optional(),
+});
+export type PageMetrics = z.infer<typeof PageMetrics>;
 
 export const PageState = z.object({
   id: z.string(),
@@ -64,6 +109,7 @@ export const PageState = z.object({
   errorCount: z.number().int().min(0).default(0),
   consoleErrorCount: z.number().int().min(0).default(0),
   networkErrorCount: z.number().int().min(0).default(0),
+  metrics: PageMetrics.default({}),
 });
 export type PageState = z.infer<typeof PageState>;
 

@@ -13,6 +13,7 @@ import {
   type Run,
 } from '@testworker/shared';
 import type { Db } from '../db/client.js';
+import { existsSync } from 'node:fs';
 import {
   findPageStateBySignature,
   insertConsoleBatch,
@@ -20,12 +21,15 @@ import {
   insertErrorBatch,
   insertNetworkBatch,
   insertRun,
+  updateRunHarPath,
+  updateRunProgress,
   updateRunStatus,
   upsertPageState,
 } from '../db/repo.js';
 import { computeSignature } from './signature.js';
 import { collectInteractions, type Interaction } from './interactions.js';
 import { applyPageStateId, createMonitors } from './monitors.js';
+import { collectWebVitals, installWebVitals } from './web-vitals.js';
 import { loadLoginScript } from '../auth/login.js';
 import { createRobotsCache, isAllowedByRobots } from './robots.js';
 
@@ -65,9 +69,19 @@ export async function runCrawl(
     finishedAt: null,
     options,
     errorMessage: null,
+    pagesDone: 0,
+    queueSize: 1,
+    currentUrl: options.startUrl,
+    harPath: null,
   };
   insertRun(db, run);
   await mkdir(join(dataDir, 'runs', runId, 'screenshots'), { recursive: true });
+
+  // Issue #87: Playwright の recordHar で HAR を保存する。 DATA_DIR 配下に置き、
+  // 完了時に runs.har_path にパスを書き込む。 mode:'minimal' で response body は
+  // 保存しない (PII / 容量爆発の回避)。
+  const harRelPath = join('runs', runId, 'network.har');
+  const harAbsPath = join(dataDir, harRelPath);
 
   let browser: Browser | null = null;
   let context: BrowserContext | null = null;
@@ -80,7 +94,11 @@ export async function runCrawl(
       viewport: options.viewport,
       userAgent: options.userAgent,
       storageState: options.storageStatePath,
+      recordHar: { path: harAbsPath, mode: 'minimal' },
     });
+    if (options.captureWebVitals) {
+      await installWebVitals(context);
+    }
 
     const monitors = createMonitors();
     monitors.bindContext(context);
@@ -119,6 +137,10 @@ export async function runCrawl(
 
     while (frontier.length > 0 && pageCount < options.maxPages) {
       const task = frontier.shift()!;
+      // Issue #86: 走行中の進捗を runs テーブルに書き戻して Web UI から見える状態にする。
+      // BFS ループ先頭で 1 ページごとに UPDATE 1 本だけ。 task が同 origin / robots /
+      // include-exclude で弾かれても currentUrl は「次に試行している URL」として正しい。
+      updateRunProgress(db, runId, pageCount, frontier.length + 1, task.url);
       if (task.depth > options.maxDepth) continue;
       if (options.sameOriginOnly) {
         try {
@@ -218,6 +240,7 @@ export async function runCrawl(
       const consoleErrCount = snap.console.filter((c) => c.level === 'error').length;
       const networkErrCount = snap.network.filter((n) => n.failed || (n.status ?? 0) >= 400).length;
       const errCount = snap.errors.length;
+      const metrics = options.captureWebVitals ? await collectWebVitals(page) : {};
 
       const pageState: PageState = {
         id: pageStateId,
@@ -232,6 +255,7 @@ export async function runCrawl(
         errorCount: errCount,
         consoleErrorCount: consoleErrCount,
         networkErrorCount: networkErrCount,
+        metrics,
       };
       upsertPageState(db, pageState);
       insertConsoleBatch(db, applyPageStateId(snap.console, pageStateId));
@@ -277,19 +301,40 @@ export async function runCrawl(
       }
     }
 
+    // 完了時に最終 progress を確定。 currentUrl は null (now idle)。
+    updateRunProgress(db, runId, pageCount, 0, null);
     updateRunStatus(db, runId, 'completed', new Date().toISOString(), null);
     return {
-      run: { ...run, status: 'completed', finishedAt: new Date().toISOString() },
+      run: {
+        ...run,
+        status: 'completed',
+        finishedAt: new Date().toISOString(),
+        pagesDone: pageCount,
+        queueSize: 0,
+        currentUrl: null,
+      },
       pages: pageCount,
       edges: edgeCount,
     };
   } catch (err) {
     const message = (err as Error).message;
+    // failed 時も進捗の最終値を残しておくと UI で「N/M で失敗」が見える。
+    updateRunProgress(db, runId, pageCount, 0, null);
     updateRunStatus(db, runId, 'failed', new Date().toISOString(), message);
     throw err;
   } finally {
+    // recordHar の flush は context.close() 内で実行されるので、 必ず close →
+    // ファイル存在を確認 → runs.har_path に書く、 の順で行う。 失敗時でも
+    // context.close() を待つことで部分的な HAR が書き出される。
     await context?.close().catch(() => undefined);
     await browser?.close().catch(() => undefined);
+    try {
+      if (existsSync(harAbsPath)) {
+        updateRunHarPath(db, runId, harRelPath);
+      }
+    } catch (err) {
+      clog.warn({ err: (err as Error).message }, 'HAR path update failed');
+    }
   }
 }
 

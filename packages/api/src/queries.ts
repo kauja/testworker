@@ -8,13 +8,14 @@ import type {
   NetworkEntry,
   PageDetail,
   PageError,
+  PageMetrics,
   PageState,
   Run,
   RunDiff,
   RunDiffPage,
   RunSummary,
 } from '@testworker/shared';
-import { CrawlOptions, log } from '@testworker/shared';
+import { CrawlOptions, PageMetrics as PageMetricsSchema, log } from '@testworker/shared';
 
 interface RunRow {
   id: string;
@@ -24,6 +25,16 @@ interface RunRow {
   finished_at: string | null;
   options_json: string;
   error_message: string | null;
+  /**
+   * Issue #86 で追加。 migration 002 以前に挿入された行は SELECT 時に
+   * DEFAULT 0 / NULL で埋まる。 better-sqlite3 から column 自体が
+   * 抜けるケース (古い DB ファイル) では undefined になるため lenient に扱う。
+   */
+  pages_done: number | null;
+  queue_size: number | null;
+  current_url: string | null;
+  /** HAR ファイルへの DATA_DIR 相対パス (Issue #87)。 旧 run / 失敗 run では null。 */
+  har_path: string | null;
 }
 
 interface PageRow {
@@ -40,6 +51,7 @@ interface PageRow {
   error_count: number;
   console_error_count: number;
   network_error_count: number;
+  metrics_json: string | null;
 }
 
 interface EdgeRow {
@@ -115,6 +127,8 @@ export function rowToRun(row: RunRow): Run {
         excludeUrlPatterns: Array.isArray(validFields.excludeUrlPatterns)
           ? (validFields.excludeUrlPatterns as string[])
           : [],
+        captureWebVitals:
+          typeof validFields.captureWebVitals === 'boolean' ? validFields.captureWebVitals : true,
       } as CrawlOptions;
     }
   }
@@ -126,7 +140,32 @@ export function rowToRun(row: RunRow): Run {
     finishedAt: row.finished_at,
     options,
     errorMessage: row.error_message,
+    pagesDone: row.pages_done ?? 0,
+    queueSize: row.queue_size,
+    currentUrl: row.current_url,
+    harPath: row.har_path ?? null,
   };
+}
+
+function parsePageMetrics(raw: string | null): PageMetrics {
+  if (!raw) return {};
+  try {
+    const parsed = PageMetricsSchema.safeParse(JSON.parse(raw));
+    if (parsed.success) return parsed.data;
+  } catch {
+    // Legacy / partial rows should still render. Treat bad metrics JSON as absent.
+  }
+  return {};
+}
+
+/**
+ * 単一 run を取得する (Issue #87 / HAR ダウンロード endpoint 用)。
+ * harPath の解決を server 側で行うため、 lenient parse を経由する。
+ */
+export function getRun(db: Database.Database, runId: string): Run | null {
+  const row = db.prepare(`SELECT * FROM runs WHERE id = ?`).get(runId) as RunRow | undefined;
+  if (!row) return null;
+  return rowToRun(row);
 }
 
 function rowToPage(row: PageRow): PageState {
@@ -143,6 +182,7 @@ function rowToPage(row: PageRow): PageState {
     errorCount: row.error_count,
     consoleErrorCount: row.console_error_count,
     networkErrorCount: row.network_error_count,
+    metrics: parsePageMetrics(row.metrics_json),
   };
 }
 

@@ -90,20 +90,31 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
           <tbody>
             {sortedPages.map((p) => {
               const totalErr = p.errorCount + p.consoleErrorCount + p.networkErrorCount;
+              // 行クリック → graph view で該当 page を選択して開く (#189)。
+              // tab パラメタを変えれば該当タブで着地する (将来 #178 で完全実装)。
+              const baseHref = `/runs/${id}?page=${encodeURIComponent(p.id)}`;
+              const consoleHref = `${baseHref}&tab=console`;
+              const networkHref = `${baseHref}&tab=network`;
+              const errorsHref = `${baseHref}&tab=errors`;
               return (
                 <tr
                   key={p.id}
                   className={cn(
-                    'border-b border-line align-top',
+                    'border-b border-line align-top transition-colors hover:bg-bg-panel/40 print:hover:bg-transparent',
                     totalErr > 0 ? 'text-ink' : 'text-ink-muted',
                   )}
                 >
                   <td className="px-2 py-1.5 font-mono">{p.depth}</td>
                   <td className="px-2 py-1.5">
-                    <div className="font-medium" title={p.title}>
-                      {labels.get(p.id) ?? p.title ?? '(untitled)'}
-                    </div>
-                    <div className="truncate font-mono text-[10px] text-ink-muted">{p.url}</div>
+                    <Link
+                      href={baseHref}
+                      className="block hover:text-accent print:hover:text-inherit"
+                    >
+                      <div className="font-medium" title={p.title}>
+                        {labels.get(p.id) ?? p.title ?? '(untitled)'}
+                      </div>
+                      <div className="truncate font-mono text-[10px] text-ink-muted">{p.url}</div>
+                    </Link>
                   </td>
                   <td
                     className={cn(
@@ -111,7 +122,13 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
                       p.errorCount > 0 && 'text-bad',
                     )}
                   >
-                    {p.errorCount}
+                    {p.errorCount > 0 ? (
+                      <Link href={errorsHref} className="hover:underline">
+                        {p.errorCount}
+                      </Link>
+                    ) : (
+                      <span>{p.errorCount}</span>
+                    )}
                   </td>
                   <td
                     className={cn(
@@ -119,7 +136,13 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
                       p.consoleErrorCount > 0 && 'text-bad',
                     )}
                   >
-                    {p.consoleErrorCount}
+                    {p.consoleErrorCount > 0 ? (
+                      <Link href={consoleHref} className="hover:underline">
+                        {p.consoleErrorCount}
+                      </Link>
+                    ) : (
+                      <span>{p.consoleErrorCount}</span>
+                    )}
                   </td>
                   <td
                     className={cn(
@@ -127,7 +150,13 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
                       p.networkErrorCount > 0 && 'text-bad',
                     )}
                   >
-                    {p.networkErrorCount}
+                    {p.networkErrorCount > 0 ? (
+                      <Link href={networkHref} className="hover:underline">
+                        {p.networkErrorCount}
+                      </Link>
+                    ) : (
+                      <span>{p.networkErrorCount}</span>
+                    )}
                   </td>
                 </tr>
               );

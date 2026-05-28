@@ -4,16 +4,18 @@ import { Readable } from 'node:stream';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serve } from '@hono/node-server';
-import { log } from '@testworker/shared';
+import { RunLaunchInput, log } from '@testworker/shared';
 import { openReadDb } from './db.js';
 import {
   getErrorGroups,
   getGraph,
   getPageDetail,
+  getRun,
   getRunDiff,
   listRuns,
   previousRunOf,
 } from './queries.js';
+import { launchCrawl } from './run-launcher.js';
 
 const PORT = Number(process.env.API_PORT ?? 3001);
 const DB_PATH = process.env.DB_PATH ?? './data/db/testworker.sqlite';
@@ -96,6 +98,7 @@ const CORS_ORIGIN: string | string[] = (() => {
 // 秘密情報が cross-origin で漏れるのを SOP (Same-Origin Policy) で防ぐため、
 // /assets/* には Access-Control-Allow-Origin を付けない。
 app.use('/health', cors({ origin: CORS_ORIGIN }));
+app.use('/runs', cors({ origin: CORS_ORIGIN }));
 app.use('/runs/*', cors({ origin: CORS_ORIGIN }));
 app.use('/pages/*', cors({ origin: CORS_ORIGIN }));
 
@@ -107,12 +110,105 @@ app.get('/runs', (c) => {
   return c.json(listRuns(db));
 });
 
+app.post('/runs', async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid_json' }, 400);
+  }
+
+  const parsed = RunLaunchInput.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'invalid_run_options', issues: parsed.error.flatten() }, 400);
+  }
+
+  try {
+    launchCrawl(parsed.data);
+  } catch (err) {
+    return c.json(
+      { error: 'runner_launch_failed', message: err instanceof Error ? err.message : String(err) },
+      500,
+    );
+  }
+
+  return c.json(
+    {
+      accepted: true,
+      acceptedAt: new Date().toISOString(),
+      options: parsed.data,
+    },
+    202,
+  );
+});
+
+app.get('/runs/:id', (c) => {
+  const db = ensureDb();
+  if (!db) return c.json(DB_NOT_READY_BODY, 503);
+  const run = getRun(db, c.req.param('id'));
+  if (!run) return c.json({ error: 'not_found' }, 404);
+  // 走行中の run は polling で進捗を取り直すため、 中間 cache に乗らないよう no-store。
+  // 完了済みは default の cache を許す。
+  if (run.status === 'running' || run.status === 'queued') {
+    c.header('Cache-Control', 'no-store');
+  }
+  return c.json(run);
+});
+
 app.get('/runs/:id/graph', (c) => {
   const db = ensureDb();
   if (!db) return c.json(DB_NOT_READY_BODY, 503);
   const graph = getGraph(db, c.req.param('id'));
   if (!graph) return c.json({ error: 'not_found' }, 404);
   return c.json(graph);
+});
+
+/**
+ * Issue #87: HAR ファイルダウンロード。
+ * runs.har_path に記録された DATA_DIR 相対パスを stream する。 path traversal は
+ * /assets/* と同じく境界 check + realpath で防ぐ。
+ *
+ * `/har/:id` という別 path にしているのは、 /runs/* に付けた wildcard CORS の影響を
+ * 受けないようにするため (Issue #95 と同じ理由)。 HAR には request URL / header /
+ * cookie 名等が含まれる可能性があるので、 攻撃 origin から fetch で読み取られない
+ * よう Same-Origin Policy に倒す。 ブラウザからの download attribute / 直接 nav
+ * 経由なら CORS は関係しない。
+ */
+app.get('/har/:id', (c) => {
+  const db = ensureDb();
+  if (!db) return c.json(DB_NOT_READY_BODY, 503);
+  const runId = c.req.param('id');
+  const run = getRun(db, runId);
+  if (!run) return c.json({ error: 'not_found' }, 404);
+  if (!run.harPath) return c.json({ error: 'har_not_recorded' }, 404);
+
+  const requested = normalize(join(DATA_DIR, run.harPath));
+  if (requested !== DATA_DIR && !requested.startsWith(DATA_DIR + sep)) {
+    return c.json({ error: 'forbidden' }, 403);
+  }
+  let abs: string;
+  try {
+    abs = realpathSync(requested);
+  } catch {
+    return c.json({ error: 'not_found' }, 404);
+  }
+  if (abs !== DATA_DIR && !abs.startsWith(DATA_DIR + sep)) {
+    return c.json({ error: 'forbidden' }, 403);
+  }
+  try {
+    const stat = statSync(abs);
+    if (!stat.isFile()) return c.json({ error: 'not_found' }, 404);
+    const stream = createReadStream(abs);
+    return new Response(Readable.toWeb(stream) as ReadableStream, {
+      headers: {
+        'content-type': 'application/json',
+        'content-disposition': `attachment; filename="run-${runId}-network.har"`,
+        'cache-control': 'public, max-age=300',
+      },
+    });
+  } catch {
+    return c.json({ error: 'not_found' }, 404);
+  }
 });
 
 app.get('/runs/:id/errors/grouped', (c) => {

@@ -1,8 +1,11 @@
 import Link from 'next/link';
 import { ApiError, fetchRuns } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { NewRunForm } from '@/components/new-run-form';
 import { RetryButton } from '@/components/retry-button';
+import { RunsAutoRefresh } from '@/components/runs-auto-refresh';
 import { TimeStamp } from '@/components/time-stamp';
+import { RunProgress } from '@/components/run-progress';
 
 interface PageError {
   kind: 'unreachable' | 'db_not_ready' | 'http';
@@ -22,65 +25,71 @@ export default async function HomePage() {
       error = { kind: 'http', message: e instanceof Error ? e.message : String(e) };
     }
   }
+  const hasActiveRun = runs.some((r) => r.run.status === 'queued' || r.run.status === 'running');
+  const recentUrls = Array.from(new Set(runs.map((r) => r.run.startUrl))).slice(0, 8);
 
   return (
     <div className="mx-auto max-w-screen-2xl px-6 py-10">
-      <div className="mb-8 flex items-end justify-between gap-4">
-        <div>
+      {hasActiveRun && <RunsAutoRefresh />}
+      <div className="mb-8">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">Runs</h1>
-          <p className="mt-1 text-sm text-ink-muted">クロール結果の一覧。新規実行は CLI から:</p>
-          <ul className="mt-2 space-y-1 text-xs text-ink-muted">
-            <li>
-              <code className="rounded bg-bg-panel px-1.5 py-0.5 font-mono text-[12px] text-ink">
-                make crawl URL=https://example.com
-              </code>{' '}
-              — 認証不要・即動く 30 秒例
-            </li>
-            <li>
-              <code className="rounded bg-bg-panel px-1.5 py-0.5 font-mono text-[12px] text-ink">
-                make crawl URL=http://host.docker.internal:3000
-              </code>{' '}
-              — ホスト上で動いているアプリ (Docker 内から見るため <code>host.docker.internal</code>)
-            </li>
-          </ul>
+          <p className="mt-1 text-sm text-ink-muted">クロール結果と新規 Run。</p>
         </div>
       </div>
 
-      {error && <ApiErrorBanner error={error} />}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start">
+        <div className="min-w-0">
+          {error && <ApiErrorBanner error={error} />}
 
-      {!error && runs.length === 0 && (
-        <div className="rounded-lg border border-dashed border-line bg-bg-subtle px-6 py-12 text-center text-sm text-ink-muted">
-          まだ run がありません。
-        </div>
-      )}
+          {!error && runs.length === 0 && (
+            <div className="rounded-lg border border-dashed border-line bg-bg-subtle px-6 py-12 text-center text-sm text-ink-muted">
+              まだ run がありません。
+            </div>
+          )}
 
-      <div className="grid grid-cols-1 gap-3">
-        {runs.map((r) => (
-          <Link
-            key={r.run.id}
-            href={`/runs/${r.run.id}`}
-            className="group rounded-lg border border-line bg-bg-subtle px-5 py-4 transition-colors hover:border-accent-soft hover:bg-bg-panel"
-          >
-            <div className="flex items-baseline justify-between gap-4">
-              <div className="min-w-0">
-                <div className="truncate font-medium text-ink">{r.run.startUrl}</div>
-                <div className="mt-1 text-xs text-ink-faint">
-                  {r.run.id} · <TimeStamp value={r.run.startedAt} mode="relative" />
+          <div className="grid grid-cols-1 gap-3">
+            {runs.map((r) => (
+              <Link
+                key={r.run.id}
+                href={`/runs/${r.run.id}`}
+                className="group rounded-lg border border-line bg-bg-subtle px-5 py-4 transition-colors hover:border-accent-soft hover:bg-bg-panel"
+              >
+                <div className="flex items-baseline justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-ink">{r.run.startUrl}</div>
+                    <div className="mt-1 text-xs text-ink-faint">
+                      {r.run.id} · <TimeStamp value={r.run.startedAt} mode="relative" />
+                    </div>
+                  </div>
+                  <StatusPill status={r.run.status} />
                 </div>
-              </div>
-              <StatusPill status={r.run.status} />
-            </div>
-            <div className="mt-3 flex items-center gap-6 text-xs text-ink-muted">
-              <Stat label="pages" value={r.pageCount} />
-              <Stat label="edges" value={r.edgeCount} />
-              <Stat
-                label="errors"
-                value={r.errorCount}
-                tone={r.errorCount > 0 ? 'bad' : undefined}
-              />
-            </div>
-          </Link>
-        ))}
+                <div className="mt-3 flex items-center gap-6 text-xs text-ink-muted">
+                  <Stat label="pages" value={r.pageCount} />
+                  <Stat label="edges" value={r.edgeCount} />
+                  <Stat
+                    label="errors"
+                    value={r.errorCount}
+                    tone={r.errorCount > 0 ? 'bad' : undefined}
+                  />
+                </div>
+                {(r.run.status === 'running' || r.run.status === 'queued') && (
+                  <div className="mt-3">
+                    <RunProgress run={r.run} compact />
+                  </div>
+                )}
+                {/* FAILED run の理由を card 内で見えるように — 詳細を開かなくても何で fail したか分かる (#168) */}
+                {(r.run.status === 'failed' || r.run.status === 'canceled') &&
+                  r.run.errorMessage && (
+                    <div className="mt-3 rounded border border-bad/30 bg-bad/5 px-2 py-1.5 font-mono text-[11px] leading-snug text-bad">
+                      {firstLineSnippet(r.run.errorMessage, 120)}
+                    </div>
+                  )}
+              </Link>
+            ))}
+          </div>
+        </div>
+        <NewRunForm recentUrls={recentUrls} />
       </div>
     </div>
   );
@@ -115,6 +124,16 @@ function ApiErrorBanner({ error }: { error: PageError }) {
       </details>
     </div>
   );
+}
+
+/**
+ * errorMessage の先頭 1 行を最大 maxLen 文字で切り詰めて返す (#168)。
+ * Playwright の長い stack の最初のサマリだけを card に見せる用。
+ */
+function firstLineSnippet(message: string, maxLen: number): string {
+  const firstLine = message.split('\n')[0]?.trim() ?? '';
+  if (firstLine.length <= maxLen) return firstLine;
+  return `${firstLine.slice(0, maxLen).trimEnd()}…`;
 }
 
 function Stat({ label, value, tone }: { label: string; value: number; tone?: 'bad' | 'ok' }) {
