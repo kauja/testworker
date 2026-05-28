@@ -118,6 +118,9 @@ export async function runCrawl(
         await page.goto(task.url, { waitUntil: 'load' });
       } catch (err) {
         console.warn(`[testworker] nav failed: ${task.url} (${(err as Error).message})`);
+        // 失敗した遷移中に発生した console / pageerror / request イベントが
+        // 次の成功ページの snapshot に紛れ込むのを防ぐため、 buffer を破棄。
+        monitors.rotate();
         continue;
       }
       if (options.waitAfterNavMs > 0) {
@@ -126,8 +129,32 @@ export async function runCrawl(
 
       const sig = await computeSignature(page);
       const exists = findPageStateBySignature(db, runId, sig.signature);
+      const isRevisit = exists !== undefined;
       const pageStateId = exists?.id ?? newPageStateId();
-      const isNewState = !exists;
+
+      if (isRevisit) {
+        // 同一 signature の再訪は upsertPageState の ON CONFLICT で error_count が
+        // 加算され、 console/network/page_errors も毎回 INSERT されて重複する。
+        // edge だけ作って snapshot は破棄する。
+        monitors.rotate();
+
+        if (task.fromPageStateId && task.fromPageStateId !== pageStateId) {
+          const edge: Edge = {
+            id: newEdgeId(),
+            runId,
+            fromPageStateId: task.fromPageStateId,
+            toPageStateId: pageStateId,
+            trigger: task.trigger,
+            triggerSelector: task.triggerSelector,
+            triggerText: task.triggerText,
+            createdAt: new Date().toISOString(),
+          };
+          insertEdge(db, edge);
+          edgeCount += 1;
+        }
+        continue;
+      }
+
       const screenshotPath = join('runs', runId, 'screenshots', `${pageStateId}.png`);
       const absScreenshot = join(dataDir, screenshotPath);
       try {
@@ -160,7 +187,7 @@ export async function runCrawl(
       insertNetworkBatch(db, applyPageStateId(snap.network, pageStateId));
       insertErrorBatch(db, applyPageStateId(snap.errors, pageStateId));
 
-      if (isNewState) pageCount += 1;
+      pageCount += 1;
 
       if (task.fromPageStateId && task.fromPageStateId !== pageStateId) {
         const edge: Edge = {
@@ -177,7 +204,6 @@ export async function runCrawl(
         edgeCount += 1;
       }
 
-      if (visitedSignatures.has(sig.signature)) continue;
       visitedSignatures.add(sig.signature);
 
       if (task.depth >= options.maxDepth) continue;
