@@ -1,0 +1,42 @@
+# Next.js (App Router / Pages Router) 向け testworker preset
+#
+# 使い方:
+#   crawl 時に env として直接渡す or YAML を読む薄い CLI ラッパーを書く。
+#   現状は対話的に値を渡す参考設定として置く (Bolt: framework preset 第一弾)。
+#
+# 想定: localhost:3000 で next dev が走っている。 `/api/*` は除外、
+# `/_next/*` 静的アセットも除外。 SSG / SSR / RSC が混在しても crawl は同じ。
+
+startUrl: http://localhost:3000
+
+# Next.js の dev server は HMR で大量 request が出る。 navTimeout 長め、
+# waitAfterNav を hydration 完了の判定材料に少し取る。
+navTimeoutMs: 30000
+waitAfterNavMs: 800
+
+# /api/* は SPA からの fetch ではあるが、 直接 URL として巡回しても
+# JSON しか返らないので除外する。 _next 系も同様。
+includeUrlPatterns: []
+excludeUrlPatterns:
+  - '^https?://[^/]+/api/'
+  - '^https?://[^/]+/_next/'
+  - '\\.(png|jpg|jpeg|svg|webp|ico|css|js|map)$'
+
+# Next.js は basePath / rewrites で別 origin に飛ばすことがあるので、
+# sameOriginOnly は維持。 localhost 内部の subdomain なら一致するはず。
+sameOriginOnly: true
+
+# robots.txt は dev では空想で「ない」ことが多いので、 fail-open で
+# 自然に動く。 production preview を crawl する場合のみ意識すれば良い。
+respectRobots: true
+
+# Next.js は client-side route push が多いので、 viewport は典型的な
+# laptop サイズに固定。 SPA 内ボタン / link を確実に踏むため。
+viewport:
+  width: 1280
+  height: 800
+
+# 巡回範囲。 maxPages は dev ではあまり大きくしすぎないこと (HMR で server
+# 側が落ちることがある)。
+maxDepth: 4
+maxPages: 60

@@ -52,6 +52,64 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error(err);
+  // human-readable error message + 「次のアクション」提案 (Issue #128 / Bolt)。
+  // 既知の失敗パターンを正規表現で識別し、 troubleshooting.md の該当節へ誘導。
+  // 一致しない場合は raw stack を出す (devloop を妨げない)。
+  const message = err instanceof Error ? err.message : String(err);
+  const stack = err instanceof Error ? err.stack : undefined;
+  type Hint = { pattern: RegExp; explain: string; nextAction: string; section: string };
+  const HINTS: Hint[] = [
+    {
+      pattern: /ERR_CERT_AUTHORITY_INVALID|self-signed certificate|UNABLE_TO_VERIFY/i,
+      explain: '自己署名 / 検証できない TLS 証明書のサイトに当たりました。',
+      nextAction:
+        'localhost / staging なら https → http で start URL を渡し直してください。 自己署名を許容する場合は mkcert で開発用 CA を OS に登録します。',
+      section: '5. certificate',
+    },
+    {
+      pattern: /Timeout \d+ms exceeded/i,
+      explain: 'page.goto がデフォルトのタイムアウト (15s) で打ち切られました。',
+      nextAction:
+        'NAV_TIMEOUT_MS=60000 (CLI env) を渡すと 60 秒に延長できます (上限 120 秒)。 重いページや回線細い環境では先に延ばしてみてください。',
+      section: '3. nav failed: timeout',
+    },
+    {
+      pattern: /loginScriptPath|loadLoginScript|login script must default-export/i,
+      explain: 'login script の読み込みに失敗しました。',
+      nextAction:
+        'docs/troubleshooting.md「login fail」節に記載した default-export 形式 (page, context) を確認してください。 LOGIN_EMAIL / LOGIN_PASSWORD などの env を環境に export 済みか再確認も推奨。',
+      section: '2. login fail',
+    },
+    {
+      pattern: /SQLITE_CANTOPEN|database is locked|no such table/i,
+      explain: 'SQLite DB の open / migration に失敗しました。',
+      nextAction:
+        '`make migrate` (または `pnpm --filter @testworker/runner run db:migrate`) を先に走らせて DB を初期化してください。 DATA_DIR / DB_PATH の env が正しい絶対パスを指しているかも確認。',
+      section: '(migration)',
+    },
+    {
+      pattern: /Cannot find module|Module not found/i,
+      explain: '依存モジュールが見つかりません。',
+      nextAction:
+        'リポジトリ root で `pnpm install --frozen-lockfile` を実行してください。 docker で動かしているなら `make up --build` で image rebuild。',
+      section: '(env setup)',
+    },
+  ];
+
+  console.error('[testworker] FAILED.');
+  console.error(`  message: ${message}`);
+  for (const h of HINTS) {
+    if (h.pattern.test(message)) {
+      console.error(`[testworker hint] ${h.explain}`);
+      console.error(`[testworker hint] 次のアクション: ${h.nextAction}`);
+      console.error(`[testworker hint] 参考: docs/troubleshooting.md「${h.section}」`);
+      process.exit(1);
+    }
+  }
+  // 一致しなかった場合は raw stack を出して devloop を阻害しない
+  if (stack) console.error(stack);
+  console.error(
+    '[testworker hint] 既知の失敗パターンに該当しません。 docs/troubleshooting.md を参照するか、 上記 stack を Issue に貼って報告してください。',
+  );
   process.exit(1);
 });
