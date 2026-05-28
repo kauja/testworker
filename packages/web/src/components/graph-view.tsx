@@ -14,6 +14,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import type { GraphPayload, PageState } from '@testworker/shared';
 import { cn } from '@/lib/cn';
+import { harDownloadUrl } from '@/lib/api';
 import { PageNode } from './page-node';
 import { PageDetailPanel } from './page-detail-panel';
 
@@ -160,6 +161,21 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
           >
             report →
           </a>
+          <span className="text-ink-faint">·</span>
+          {graph.run.harPath ? (
+            <a
+              href={harDownloadUrl(graph.run.id)}
+              download={`run-${graph.run.id}-network.har`}
+              className="text-ink-muted hover:text-accent hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+              title="HAR (Chrome DevTools / Firefox にインポート可能) Issue #87"
+            >
+              HAR ↓
+            </a>
+          ) : (
+            <span className="text-ink-faint" title="HAR は記録されていません (旧 run / 失敗 run)">
+              HAR —
+            </span>
+          )}
         </div>
         <ReactFlow
           nodes={nodes}

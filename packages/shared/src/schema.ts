@@ -45,6 +45,11 @@ export const Run = z.object({
   finishedAt: z.string().nullable(),
   options: CrawlOptions,
   errorMessage: z.string().nullable(),
+  /**
+   * Playwright `recordHar` で記録した HAR ファイルへのパス (Issue #87)。
+   * DATA_DIR からの相対パス。 旧 run / 失敗 run / mode:'minimal' を切った run は null。
+   */
+  harPath: z.string().nullable().default(null),
 });
 export type Run = z.infer<typeof Run>;
 

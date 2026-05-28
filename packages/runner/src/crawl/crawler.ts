@@ -12,6 +12,7 @@ import {
   type Run,
 } from '@testworker/shared';
 import type { Db } from '../db/client.js';
+import { existsSync } from 'node:fs';
 import {
   findPageStateBySignature,
   insertConsoleBatch,
@@ -19,6 +20,7 @@ import {
   insertErrorBatch,
   insertNetworkBatch,
   insertRun,
+  updateRunHarPath,
   updateRunStatus,
   upsertPageState,
 } from '../db/repo.js';
@@ -62,9 +64,16 @@ export async function runCrawl(
     finishedAt: null,
     options,
     errorMessage: null,
+    harPath: null,
   };
   insertRun(db, run);
   await mkdir(join(dataDir, 'runs', runId, 'screenshots'), { recursive: true });
+
+  // Issue #87: Playwright の recordHar で HAR を保存する。 DATA_DIR 配下に置き、
+  // 完了時に runs.har_path にパスを書き込む。 mode:'minimal' で response body は
+  // 保存しない (PII / 容量爆発の回避)。
+  const harRelPath = join('runs', runId, 'network.har');
+  const harAbsPath = join(dataDir, harRelPath);
 
   let browser: Browser | null = null;
   let context: BrowserContext | null = null;
@@ -77,6 +86,7 @@ export async function runCrawl(
       viewport: options.viewport,
       userAgent: options.userAgent,
       storageState: options.storageStatePath,
+      recordHar: { path: harAbsPath, mode: 'minimal' },
     });
 
     const monitors = createMonitors();
@@ -285,8 +295,18 @@ export async function runCrawl(
     updateRunStatus(db, runId, 'failed', new Date().toISOString(), message);
     throw err;
   } finally {
+    // recordHar の flush は context.close() 内で実行されるので、 必ず close →
+    // ファイル存在を確認 → runs.har_path に書く、 の順で行う。 失敗時でも
+    // context.close() を待つことで部分的な HAR が書き出される。
     await context?.close().catch(() => undefined);
     await browser?.close().catch(() => undefined);
+    try {
+      if (existsSync(harAbsPath)) {
+        updateRunHarPath(db, runId, harRelPath);
+      }
+    } catch (err) {
+      console.warn(`[testworker] HAR path update failed: ${(err as Error).message}`);
+    }
   }
 }
 

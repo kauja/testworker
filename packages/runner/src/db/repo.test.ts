@@ -16,7 +16,8 @@ beforeEach(() => {
       started_at TEXT NOT NULL,
       finished_at TEXT,
       options_json TEXT NOT NULL,
-      error_message TEXT
+      error_message TEXT,
+      har_path TEXT
     );
 
     CREATE TABLE page_states (
@@ -75,6 +76,7 @@ const run = {
     excludeUrlPatterns: [],
   },
   errorMessage: null,
+  harPath: null,
 };
 
 describe('run repository writes', () => {

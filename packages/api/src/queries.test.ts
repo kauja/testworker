@@ -9,6 +9,7 @@ const baseRow = (options: unknown, overrides: Partial<Parameters<typeof rowToRun
   finished_at: null,
   options_json: typeof options === 'string' ? options : JSON.stringify(options),
   error_message: null,
+  har_path: null,
   ...overrides,
 });
 

@@ -9,6 +9,7 @@ import {
   getErrorGroups,
   getGraph,
   getPageDetail,
+  getRun,
   getRunDiff,
   listRuns,
   previousRunOf,
@@ -112,6 +113,54 @@ app.get('/runs/:id/graph', (c) => {
   const graph = getGraph(db, c.req.param('id'));
   if (!graph) return c.json({ error: 'not_found' }, 404);
   return c.json(graph);
+});
+
+/**
+ * Issue #87: HAR ファイルダウンロード。
+ * runs.har_path に記録された DATA_DIR 相対パスを stream する。 path traversal は
+ * /assets/* と同じく境界 check + realpath で防ぐ。
+ *
+ * `/har/:id` という別 path にしているのは、 /runs/* に付けた wildcard CORS の影響を
+ * 受けないようにするため (Issue #95 と同じ理由)。 HAR には request URL / header /
+ * cookie 名等が含まれる可能性があるので、 攻撃 origin から fetch で読み取られない
+ * よう Same-Origin Policy に倒す。 ブラウザからの download attribute / 直接 nav
+ * 経由なら CORS は関係しない。
+ */
+app.get('/har/:id', (c) => {
+  const db = ensureDb();
+  if (!db) return c.json(DB_NOT_READY_BODY, 503);
+  const runId = c.req.param('id');
+  const run = getRun(db, runId);
+  if (!run) return c.json({ error: 'not_found' }, 404);
+  if (!run.harPath) return c.json({ error: 'har_not_recorded' }, 404);
+
+  const requested = normalize(join(DATA_DIR, run.harPath));
+  if (requested !== DATA_DIR && !requested.startsWith(DATA_DIR + sep)) {
+    return c.json({ error: 'forbidden' }, 403);
+  }
+  let abs: string;
+  try {
+    abs = realpathSync(requested);
+  } catch {
+    return c.json({ error: 'not_found' }, 404);
+  }
+  if (abs !== DATA_DIR && !abs.startsWith(DATA_DIR + sep)) {
+    return c.json({ error: 'forbidden' }, 403);
+  }
+  try {
+    const stat = statSync(abs);
+    if (!stat.isFile()) return c.json({ error: 'not_found' }, 404);
+    const stream = createReadStream(abs);
+    return new Response(Readable.toWeb(stream) as ReadableStream, {
+      headers: {
+        'content-type': 'application/json',
+        'content-disposition': `attachment; filename="run-${runId}-network.har"`,
+        'cache-control': 'public, max-age=300',
+      },
+    });
+  } catch {
+    return c.json({ error: 'not_found' }, 404);
+  }
 });
 
 app.get('/runs/:id/errors/grouped', (c) => {

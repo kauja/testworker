@@ -24,6 +24,8 @@ interface RunRow {
   finished_at: string | null;
   options_json: string;
   error_message: string | null;
+  /** HAR ファイルへの DATA_DIR 相対パス (Issue #87)。 旧 run / 失敗 run では null。 */
+  har_path: string | null;
 }
 
 interface PageRow {
@@ -132,7 +134,17 @@ export function rowToRun(row: RunRow): Run {
     finishedAt: row.finished_at,
     options,
     errorMessage: row.error_message,
+    harPath: row.har_path ?? null,
   };
+}
+
+/**
+ * 単一 run を取得する (Issue #87 / HAR ダウンロード endpoint 用)。
+ * harPath の解決を server 側で行うため、 lenient parse を経由する。
+ */
+export function getRun(db: Database.Database, runId: string): Run | null {
+  const row = db.prepare(`SELECT * FROM runs WHERE id = ?`).get(runId) as RunRow | undefined;
+  return row ? rowToRun(row) : null;
 }
 
 function rowToPage(row: PageRow): PageState {
