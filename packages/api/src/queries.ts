@@ -49,6 +49,18 @@ interface EdgeRow {
   created_at: string;
 }
 
+// 各 field を個別に safeParse し、 valid なものだけ拾う。 1 field が invalid なときに
+// 他の有効な field まで defaults に倒すのを防ぐ (Issue #66)。
+function pickValidOptionFields(raw: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, fieldSchema] of Object.entries(CrawlOptions.shape)) {
+    if (!(key in raw)) continue;
+    const parsed = fieldSchema.safeParse(raw[key]);
+    if (parsed.success) out[key] = parsed.data;
+  }
+  return out;
+}
+
 function rowToRun(row: RunRow): Run {
   // disk corruption / 部分書き込み等で options_json が壊れていても /runs は落とさない。
   let raw: unknown = {};
@@ -73,24 +85,38 @@ function rowToRun(row: RunRow): Run {
       `[testworker-api] run ${row.id}: options_json schema mismatch`,
       parsed.error.flatten(),
     );
-    // 最低限 startUrl + Zod の defaults だけで再構築する。
-    // CrawlOptions.parse は startUrl が z.string().url() を要求するため、
-    // legacy row で `host.docker.internal:3000` のような scheme なし URL が
-    // 入っているとここで throw する。 二段の try/catch にして最悪でも /runs を
-    // 落とさず手書き defaults でしのぐ。
-    try {
-      options = CrawlOptions.parse({ startUrl: row.start_url });
-    } catch {
+    // field-by-field の救済: invalid な 1 field のせいで maxDepth / viewport / patterns 等
+    // 他の正当な user-set 値を defaults で塗り潰すのを防ぐ。
+    const validFields = pickValidOptionFields(merged);
+    if (typeof validFields.startUrl !== 'string') validFields.startUrl = row.start_url;
+    const repaired = CrawlOptions.safeParse(validFields);
+    if (repaired.success) {
+      options = repaired.data;
+    } else {
+      // 最終救済: startUrl が url() を満たさない (legacy scheme なし URL) などで
+      // CrawlOptions.parse は依然 throw する。 手書き defaults と merge して
+      // startUrl を生のまま保持する (UI 側でどのみち string として表示するだけ)。
       options = {
+        ...validFields,
         startUrl: row.start_url,
-        maxDepth: 3,
-        maxPages: 50,
-        sameOriginOnly: true,
-        navTimeoutMs: 15_000,
-        waitAfterNavMs: 500,
-        viewport: { width: 1280, height: 800 },
-        includeUrlPatterns: [],
-        excludeUrlPatterns: [],
+        maxDepth: typeof validFields.maxDepth === 'number' ? validFields.maxDepth : 3,
+        maxPages: typeof validFields.maxPages === 'number' ? validFields.maxPages : 50,
+        sameOriginOnly:
+          typeof validFields.sameOriginOnly === 'boolean' ? validFields.sameOriginOnly : true,
+        navTimeoutMs:
+          typeof validFields.navTimeoutMs === 'number' ? validFields.navTimeoutMs : 15_000,
+        waitAfterNavMs:
+          typeof validFields.waitAfterNavMs === 'number' ? validFields.waitAfterNavMs : 500,
+        viewport:
+          typeof validFields.viewport === 'object' && validFields.viewport !== null
+            ? (validFields.viewport as CrawlOptions['viewport'])
+            : { width: 1280, height: 800 },
+        includeUrlPatterns: Array.isArray(validFields.includeUrlPatterns)
+          ? (validFields.includeUrlPatterns as string[])
+          : [],
+        excludeUrlPatterns: Array.isArray(validFields.excludeUrlPatterns)
+          ? (validFields.excludeUrlPatterns as string[])
+          : [],
       } as CrawlOptions;
     }
   }
