@@ -76,6 +76,11 @@ export const Run = z.object({
   pagesDone: z.number().int().min(0).default(0),
   queueSize: z.number().int().min(0).nullable().default(null),
   currentUrl: z.string().nullable().default(null),
+  /**
+   * Playwright `recordHar` で記録した HAR ファイルへのパス (Issue #87)。
+   * DATA_DIR からの相対パス。 旧 run / 失敗 run / mode:'minimal' を切った run は null。
+   */
+  harPath: z.string().nullable().default(null),
 });
 export type Run = z.infer<typeof Run>;
 

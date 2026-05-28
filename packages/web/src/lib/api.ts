@@ -123,3 +123,9 @@ export const fetchRunDiff = (
 // docker-compose 内の `http://api:3001`) を SSR でシリアライズすると、 ブラウザ
 // から `http://api:3001/...` に取りに行ってしまい screenshot 表示が永久に壊れる。
 export const assetUrl = (relPath: string) => `${CLIENT_BASE}/assets/${relPath}`;
+
+/**
+ * HAR ダウンロード URL (Issue #87)。 ブラウザから download attribute で開く前提。
+ * `/runs/*` の wildcard CORS を回避するため別 path (`/har/:id`) に置いている (Issue #95)。
+ */
+export const harDownloadUrl = (runId: string) => `${CLIENT_BASE}/har/${runId}`;

@@ -19,7 +19,8 @@ beforeEach(() => {
       error_message TEXT,
       pages_done INTEGER NOT NULL DEFAULT 0,
       queue_size INTEGER,
-      current_url TEXT
+      current_url TEXT,
+      har_path TEXT
     );
 
     CREATE TABLE page_states (
@@ -83,6 +84,7 @@ const run = {
   pagesDone: 0,
   queueSize: 1,
   currentUrl: 'https://example.com',
+  harPath: null,
 };
 
 describe('run repository writes', () => {

@@ -12,9 +12,9 @@ export function insertRun(db: Db, run: Run): void {
   const stmt = db.$sqlite.prepare(`
     INSERT INTO runs (
       id, start_url, status, started_at, finished_at, options_json, error_message,
-      pages_done, queue_size, current_url
+      pages_done, queue_size, current_url, har_path
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run(
     run.id,
@@ -27,6 +27,7 @@ export function insertRun(db: Db, run: Run): void {
     run.pagesDone,
     run.queueSize,
     run.currentUrl,
+    run.harPath,
   );
 }
 
@@ -61,6 +62,14 @@ export function updateRunProgress(
     `UPDATE runs SET pages_done = ?, queue_size = ?, current_url = ? WHERE id = ?`,
   );
   stmt.run(pagesDone, queueSize, currentUrl, runId);
+}
+
+/**
+ * HAR (Playwright が context.close() で flush) のパスを runs に紐付ける。
+ * 失敗 run でも部分的に保存される可能性があるので caller が判断して呼ぶ。
+ */
+export function updateRunHarPath(db: Db, runId: string, harPath: string | null): void {
+  db.$sqlite.prepare(`UPDATE runs SET har_path = ? WHERE id = ?`).run(harPath, runId);
 }
 
 export function upsertPageState(db: Db, page: PageState): void {

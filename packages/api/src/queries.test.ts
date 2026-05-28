@@ -12,6 +12,7 @@ const baseRow = (options: unknown, overrides: Partial<Parameters<typeof rowToRun
   pages_done: 0,
   queue_size: null,
   current_url: null,
+  har_path: null,
   ...overrides,
 });
 

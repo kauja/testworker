@@ -33,6 +33,8 @@ interface RunRow {
   pages_done: number | null;
   queue_size: number | null;
   current_url: string | null;
+  /** HAR ファイルへの DATA_DIR 相対パス (Issue #87)。 旧 run / 失敗 run では null。 */
+  har_path: string | null;
 }
 
 interface PageRow {
@@ -147,6 +149,7 @@ export function rowToRun(row: RunRow): Run {
     pagesDone: row.pages_done ?? 0,
     queueSize: row.queue_size,
     currentUrl: row.current_url,
+    harPath: row.har_path ?? null,
   };
 }
 
@@ -161,6 +164,10 @@ function parsePageMetrics(raw: string | null): PageMetrics {
   return {};
 }
 
+/**
+ * 単一 run を取得する (Issue #87 / HAR ダウンロード endpoint 用)。
+ * harPath の解決を server 側で行うため、 lenient parse を経由する。
+ */
 export function getRun(db: Database.Database, runId: string): Run | null {
   const row = db.prepare(`SELECT * FROM runs WHERE id = ?`).get(runId) as RunRow | undefined;
   if (!row) return null;
