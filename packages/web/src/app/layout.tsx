@@ -37,12 +37,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/" className="hover:text-ink">
                 Runs
               </Link>
-              <a
-                href="https://github.com/"
-                target="_blank"
-                rel="noreferrer"
-                className="hover:text-ink"
-              >
+              <a href={config.repoUrl} target="_blank" rel="noreferrer" className="hover:text-ink">
                 GitHub
               </a>
             </nav>
