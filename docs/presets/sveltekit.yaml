@@ -1,0 +1,28 @@
+# SvelteKit (vite dev / adapter-node 共通) 向け testworker preset
+#
+# Intent #128 / Bolt: framework preset。 Next.js preset と方針は同じ、
+# SvelteKit 固有の URL pattern だけ調整。
+
+startUrl: http://localhost:5173
+
+navTimeoutMs: 30000
+waitAfterNavMs: 600
+
+# SvelteKit dev は `/_app/` 配下に Vite の HMR client / asset を置く。
+# Form action endpoint `?/action_name` も明示除外。
+includeUrlPatterns: []
+excludeUrlPatterns:
+  - '^https?://[^/]+/_app/'
+  - '^https?://[^/]+/__data\\.json'
+  - '\\?/[\\w-]+(&|$)'
+  - '\\.(png|jpg|jpeg|svg|webp|ico|css|js|map)$'
+
+sameOriginOnly: true
+respectRobots: true
+
+viewport:
+  width: 1280
+  height: 800
+
+maxDepth: 4
+maxPages: 60
