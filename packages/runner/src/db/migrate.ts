@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { log } from '@testworker/shared';
 import { openDb } from './client.js';
 import { loadRunnerEnv } from '../config.js';
 
@@ -53,7 +54,7 @@ export function migrate(dbPath: string): { applied: string[]; finalVersion: numb
       });
       tx();
       applied.push(m.name);
-      console.log(`[testworker] migrated to v${m.version} (${m.name})`);
+      log.info({ version: m.version, name: m.name }, 'migration applied');
     }
     const final = (db.$sqlite.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
@@ -67,10 +68,11 @@ function main(): void {
   const env = loadRunnerEnv();
   const result = migrate(env.dbPath);
   if (result.applied.length === 0) {
-    console.log(`[testworker] already up-to-date (v${result.finalVersion}): ${env.dbPath}`);
+    log.info({ version: result.finalVersion, dbPath: env.dbPath }, 'already up-to-date');
   } else {
-    console.log(
-      `[testworker] migrated ${result.applied.length} step(s) → v${result.finalVersion}: ${env.dbPath}`,
+    log.info(
+      { steps: result.applied.length, version: result.finalVersion, dbPath: env.dbPath },
+      'migration complete',
     );
   }
 }

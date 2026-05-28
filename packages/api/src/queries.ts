@@ -15,7 +15,7 @@ import type {
   RunDiffPage,
   RunSummary,
 } from '@testworker/shared';
-import { CrawlOptions, PageMetrics as PageMetricsSchema } from '@testworker/shared';
+import { CrawlOptions, PageMetrics as PageMetricsSchema, log } from '@testworker/shared';
 
 interface RunRow {
   id: string;
@@ -83,10 +83,7 @@ export function rowToRun(row: RunRow): Run {
   try {
     raw = JSON.parse(row.options_json);
   } catch (err) {
-    console.warn(
-      `[testworker-api] run ${row.id}: options_json JSON.parse failed`,
-      (err as Error).message,
-    );
+    log.warn({ runId: row.id, err: (err as Error).message }, 'options_json JSON.parse failed');
   }
   // raw に startUrl が無い古い形式でも row.start_url で確実に補完する。
   const merged: Record<string, unknown> =
@@ -97,10 +94,7 @@ export function rowToRun(row: RunRow): Run {
   if (parsed.success) {
     options = parsed.data;
   } else {
-    console.warn(
-      `[testworker-api] run ${row.id}: options_json schema mismatch`,
-      parsed.error.flatten(),
-    );
+    log.warn({ runId: row.id, issues: parsed.error.flatten() }, 'options_json schema mismatch');
     // field-by-field の救済: invalid な 1 field のせいで maxDepth / viewport / patterns 等
     // 他の正当な user-set 値を defaults で塗り潰すのを防ぐ。
     const validFields = pickValidOptionFields(merged);

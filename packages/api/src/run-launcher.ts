@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
+import { log } from '@testworker/shared';
 import type { RunLaunchInput } from '@testworker/shared';
 
 export interface RunnerCommand {
@@ -64,15 +65,16 @@ export function launchCrawl(options: RunLaunchInput): ChildProcess {
   child.stdout?.on('data', (chunk) => process.stdout.write(prefixLines('runner', chunk)));
   child.stderr?.on('data', (chunk) => process.stderr.write(prefixLines('runner', chunk)));
   child.on('error', (err) => {
-    console.error(`[testworker-api] runner spawn failed: ${err.message}`);
+    log.error({ err: err.message }, 'runner spawn failed');
   });
   child.on('exit', (code, signal) => {
     if (code === 0) {
-      console.log('[testworker-api] runner completed');
+      log.info('runner completed');
       return;
     }
-    console.warn(
-      `[testworker-api] runner exited with ${signal ? `signal ${signal}` : `code ${code}`}`,
+    log.warn(
+      { signal, code },
+      `runner exited with ${signal ? `signal ${signal}` : `code ${code}`}`,
     );
   });
 
