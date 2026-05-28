@@ -106,6 +106,7 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
           maxZoom={2}
           proOptions={{ hideAttribution: true }}
           onNodeClick={(_, n) => setSelectedId(n.id)}
+          aria-label="画面遷移グラフ (screen transition graph)"
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#1c222b" />
           <Controls showInteractive={false} />
