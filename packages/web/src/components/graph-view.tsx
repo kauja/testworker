@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   ReactFlow,
   Background,
@@ -49,7 +50,15 @@ function layout(pages: PageState[]): Record<string, { x: number; y: number }> {
 }
 
 export function GraphView({ graph }: { graph: GraphPayload }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // report 等から `/runs/<id>?page=<pid>` で deep-link されたときに initial 選択
+  // 状態として反映する (#189)。 該当 page が graph に無ければ null。
+  const searchParams = useSearchParams();
+  const initialPageId = (() => {
+    const requested = searchParams.get('page');
+    if (!requested) return null;
+    return graph.pages.some((p) => p.id === requested) ? requested : null;
+  })();
+  const [selectedId, setSelectedId] = useState<string | null>(initialPageId);
   // minimap は 22 pages 程度の run でも画面の 1/4 弱を占め、 graph 本体に被る (#166)。
   // default off + toggle で「観察」 と「俯瞰」 を分離する。 m キーでも toggle 可。
   const [minimapVisible, setMinimapVisible] = useState(false);
