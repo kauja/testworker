@@ -30,7 +30,13 @@ COPY packages/runner/package.json packages/runner/
 # runner はソース bind mount で動かす CLI 用途だが、 依存解決は再現性のため
 # --frozen-lockfile を強制する。 lockfile を更新するときは別途 pnpm install を
 # ホスト側で実行して lock を refresh してから docker build する (Issue #100)。
-RUN pnpm install --frozen-lockfile
+#
+# Playwright image の Node メジャー更新 (v1.60 で Node 24 / NODE_MODULE_VERSION
+# 137) と better-sqlite3 の prebuild (Node 22 / 127) が ABI mismatch する
+# (#158) ので、 install 直後に rebuild してネイティブモジュールを image の
+# Node に合わせて再コンパイルする。
+RUN pnpm install --frozen-lockfile \
+ && pnpm --filter @testworker/runner rebuild better-sqlite3
 
 # ソースは bind mount を想定（compose の volumes 参照）。
 ENTRYPOINT ["pnpm", "--filter", "@testworker/runner", "run"]
