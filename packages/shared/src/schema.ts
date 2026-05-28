@@ -164,3 +164,43 @@ export const ErrorGroup = z.object({
   ),
 });
 export type ErrorGroup = z.infer<typeof ErrorGroup>;
+
+/**
+ * 2 つの run の diff (Issue #85 / Intent #125)。
+ *
+ * page の identity は signature (URL + DOM 構造ハッシュ) を使う。 同じ signature が
+ * base / target 両方にあれば「同一画面」、 片方にしかなければ新規 / 削除。
+ *
+ * errors はメッセージ + stack の fingerprint で別途 diff (errors grouped 側で
+ * 計算した fingerprint と互換)。
+ */
+export const RunDiffPage = z.object({
+  pageStateId: z.string(),
+  url: z.string(),
+  title: z.string(),
+  signature: z.string(),
+  depth: z.number().int(),
+  errorCount: z.number().int(),
+  consoleErrorCount: z.number().int(),
+  networkErrorCount: z.number().int(),
+});
+export type RunDiffPage = z.infer<typeof RunDiffPage>;
+
+export const RunDiff = z.object({
+  baseRunId: z.string(),
+  targetRunId: z.string(),
+  /** target にあり base に無い signature の page (= 新規ページ)。 */
+  newPages: z.array(RunDiffPage),
+  /** base にあり target に無い signature の page (= 削除された / 到達不能になった)。 */
+  removedPages: z.array(RunDiffPage),
+  /** 両方にある signature の page。 target 側の最新メタを返す。 */
+  commonPages: z.array(RunDiffPage),
+  summary: z.object({
+    baseTotal: z.number().int(),
+    targetTotal: z.number().int(),
+    newCount: z.number().int(),
+    removedCount: z.number().int(),
+    commonCount: z.number().int(),
+  }),
+});
+export type RunDiff = z.infer<typeof RunDiff>;
