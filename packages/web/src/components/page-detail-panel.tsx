@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import type { ConsoleEntry, Edge, NetworkEntry, PageDetail } from '@testworker/shared';
 import { assetUrl, fetchPage } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { TimeStamp } from './time-stamp';
 
 type Tab = 'overview' | 'console' | 'network' | 'errors' | 'routes';
 type ConsoleLevel = 'log' | 'info' | 'warn' | 'error' | 'debug';
@@ -219,7 +220,7 @@ export function PageDetailPanel({
               <li key={e.id} className="px-4 py-2">
                 <div className="flex items-center gap-2 text-[11px] text-ink-faint">
                   <span className="rounded bg-bad/15 px-1.5 py-0.5 text-bad">{e.kind}</span>
-                  <span>{new Date(e.timestamp).toLocaleTimeString()}</span>
+                  <TimeStamp value={e.timestamp} options={{ timeStyle: 'medium' }} />
                 </div>
                 <div className="mt-1 font-mono text-[12px] text-ink">{e.message}</div>
                 {e.stack && (
@@ -372,7 +373,11 @@ function ConsoleTab({ entries }: { entries: ConsoleEntry[] }) {
           <li key={c.id} className="px-4 py-2">
             <div className="flex items-center gap-2">
               <LevelTag level={c.level} />
-              <span className="text-ink-faint">{new Date(c.timestamp).toLocaleTimeString()}</span>
+              <TimeStamp
+                value={c.timestamp}
+                options={{ timeStyle: 'medium' }}
+                className="text-ink-faint"
+              />
             </div>
             <div className="mt-1 break-words font-mono text-[12px] text-ink">{c.text}</div>
             {c.url && (
