@@ -15,11 +15,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /workspace
 
-COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/runner/package.json packages/runner/
 
-RUN pnpm install --no-frozen-lockfile
+# runner はソース bind mount で動かす CLI 用途だが、 依存解決は再現性のため
+# --frozen-lockfile を強制する。 lockfile を更新するときは別途 pnpm install を
+# ホスト側で実行して lock を refresh してから docker build する (Issue #100)。
+RUN pnpm install --frozen-lockfile
 
 # ソースは bind mount を想定（compose の volumes 参照）。
 ENTRYPOINT ["pnpm", "--filter", "@testworker/runner", "run"]
