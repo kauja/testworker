@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   ReactFlow,
   Background,
@@ -13,7 +14,6 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { GraphPayload, PageState } from '@testworker/shared';
-import { cn } from '@/lib/cn';
 import { computePageLabels } from '@/lib/page-label';
 import { PageNode } from './page-node';
 import { PageDetailPanel } from './page-detail-panel';
@@ -50,7 +50,15 @@ function layout(pages: PageState[]): Record<string, { x: number; y: number }> {
 }
 
 export function GraphView({ graph }: { graph: GraphPayload }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // report 等から `/runs/<id>?page=<pid>` で deep-link されたときに initial 選択
+  // 状態として反映する (#189)。 該当 page が graph に無ければ null。
+  const searchParams = useSearchParams();
+  const initialPageId = (() => {
+    const requested = searchParams.get('page');
+    if (!requested) return null;
+    return graph.pages.some((p) => p.id === requested) ? requested : null;
+  })();
+  const [selectedId, setSelectedId] = useState<string | null>(initialPageId);
   // ReactFlow v12 の MiniMap は viewport サイズに応じて SVG の shapeRendering
   // 属性を SSR と CSR で変える (`crispEdges` ↔ `geometricPrecision`) ため、
   // Next.js App Router の 'use client' コンポーネントでも SSR pass で
@@ -102,17 +110,20 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
 
   return (
     <div className="relative grid h-full grid-cols-[1fr_360px]">
-      <div className="relative">
+      <div className="flex h-full flex-col">
         {isFailed && (
           <div
             role="alert"
-            className="absolute inset-x-0 top-0 z-20 border-b border-bad/40 bg-bad/10 px-6 py-3 text-xs text-bad"
+            className="border-b border-bad/40 bg-bad/10 px-6 py-3 text-xs text-bad"
           >
-            <div className="font-medium uppercase tracking-wider">
-              この run は {graph.run.status} 状態で終了しました
+            <div className="flex items-baseline justify-between gap-3">
+              <div className="font-medium uppercase tracking-wider">
+                この run は {graph.run.status} 状態で終了しました
+              </div>
+              {graph.run.errorMessage && <CopyErrorButton message={graph.run.errorMessage} />}
             </div>
             {graph.run.errorMessage ? (
-              <pre className="mt-1.5 max-h-32 overflow-auto whitespace-pre-wrap font-mono text-[11px]">
+              <pre className="mt-1.5 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded border border-bad/30 bg-bg-panel/60 p-2 font-mono text-[11px] leading-relaxed">
                 {graph.run.errorMessage}
               </pre>
             ) : (
@@ -134,12 +145,8 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
             </div>
           </div>
         )}
-        <div
-          className={cn(
-            'absolute left-4 z-10 flex items-center gap-3 rounded-md border border-line bg-bg-panel/80 px-3 py-2 text-xs backdrop-blur',
-            isFailed ? 'top-24' : 'top-4',
-          )}
-        >
+        <div className="relative flex-1">
+        <div className="absolute left-4 top-4 z-10 flex items-center gap-3 rounded-md border border-line bg-bg-panel/80 px-3 py-2 text-xs backdrop-blur">
           <span className="truncate text-ink-muted">{graph.run.startUrl}</span>
           <span className="text-ink-faint">·</span>
           <span className="text-ink">{graph.pages.length} pages</span>
@@ -216,8 +223,28 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
             </button>
           </Panel>
         </ReactFlow>
+        </div>
       </div>
       <PageDetailPanel pageId={selectedId} onSelectPage={setSelectedId} />
     </div>
+  );
+}
+
+function CopyErrorButton({ message }: { message: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void navigator.clipboard.writeText(message).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+      className="shrink-0 rounded border border-bad/40 bg-bad/15 px-2 py-0.5 text-[10px] uppercase tracking-wider text-bad hover:bg-bad/25 focus-visible:outline focus-visible:outline-1 focus-visible:outline-bad"
+      aria-label="errorMessage の全文をコピー"
+    >
+      {copied ? 'copied' : 'copy'}
+    </button>
   );
 }
