@@ -2,6 +2,7 @@ import type {
   ErrorGroup,
   GraphPayload,
   PageDetail,
+  Run,
   RunDiff,
   RunLaunchInput,
   RunLaunchResponse,
@@ -103,6 +104,7 @@ export const apiBase = base;
 export const fetchRuns = (init?: RequestInit) => get<RunSummary[]>('/runs', init);
 export const launchRun = (input: RunLaunchInput, init?: RequestInit) =>
   post<RunLaunchResponse>('/runs', input, init);
+export const fetchRun = (runId: string, init?: RequestInit) => get<Run>(`/runs/${runId}`, init);
 export const fetchGraph = (runId: string, init?: RequestInit) =>
   get<GraphPayload>(`/runs/${runId}/graph`, init);
 export const fetchPage = (pageId: string, init?: RequestInit) =>
@@ -121,3 +123,9 @@ export const fetchRunDiff = (
 // docker-compose 内の `http://api:3001`) を SSR でシリアライズすると、 ブラウザ
 // から `http://api:3001/...` に取りに行ってしまい screenshot 表示が永久に壊れる。
 export const assetUrl = (relPath: string) => `${CLIENT_BASE}/assets/${relPath}`;
+
+/**
+ * HAR ダウンロード URL (Issue #87)。 ブラウザから download attribute で開く前提。
+ * `/runs/*` の wildcard CORS を回避するため別 path (`/har/:id`) に置いている (Issue #95)。
+ */
+export const harDownloadUrl = (runId: string) => `${CLIENT_BASE}/har/${runId}`;

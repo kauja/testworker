@@ -25,6 +25,16 @@ interface RunRow {
   finished_at: string | null;
   options_json: string;
   error_message: string | null;
+  /**
+   * Issue #86 で追加。 migration 002 以前に挿入された行は SELECT 時に
+   * DEFAULT 0 / NULL で埋まる。 better-sqlite3 から column 自体が
+   * 抜けるケース (古い DB ファイル) では undefined になるため lenient に扱う。
+   */
+  pages_done: number | null;
+  queue_size: number | null;
+  current_url: string | null;
+  /** HAR ファイルへの DATA_DIR 相対パス (Issue #87)。 旧 run / 失敗 run では null。 */
+  har_path: string | null;
 }
 
 interface PageRow {
@@ -136,6 +146,10 @@ export function rowToRun(row: RunRow): Run {
     finishedAt: row.finished_at,
     options,
     errorMessage: row.error_message,
+    pagesDone: row.pages_done ?? 0,
+    queueSize: row.queue_size,
+    currentUrl: row.current_url,
+    harPath: row.har_path ?? null,
   };
 }
 
@@ -148,6 +162,16 @@ function parsePageMetrics(raw: string | null): PageMetrics {
     // Legacy / partial rows should still render. Treat bad metrics JSON as absent.
   }
   return {};
+}
+
+/**
+ * 単一 run を取得する (Issue #87 / HAR ダウンロード endpoint 用)。
+ * harPath の解決を server 側で行うため、 lenient parse を経由する。
+ */
+export function getRun(db: Database.Database, runId: string): Run | null {
+  const row = db.prepare(`SELECT * FROM runs WHERE id = ?`).get(runId) as RunRow | undefined;
+  if (!row) return null;
+  return rowToRun(row);
 }
 
 function rowToPage(row: PageRow): PageState {

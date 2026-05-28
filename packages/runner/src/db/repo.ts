@@ -10,8 +10,11 @@ import type {
 
 export function insertRun(db: Db, run: Run): void {
   const stmt = db.$sqlite.prepare(`
-    INSERT INTO runs (id, start_url, status, started_at, finished_at, options_json, error_message)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO runs (
+      id, start_url, status, started_at, finished_at, options_json, error_message,
+      pages_done, queue_size, current_url, har_path
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run(
     run.id,
@@ -21,6 +24,10 @@ export function insertRun(db: Db, run: Run): void {
     run.finishedAt,
     JSON.stringify(run.options),
     run.errorMessage,
+    run.pagesDone,
+    run.queueSize,
+    run.currentUrl,
+    run.harPath,
   );
 }
 
@@ -35,6 +42,34 @@ export function updateRunStatus(
     `UPDATE runs SET status = ?, finished_at = ?, error_message = ? WHERE id = ?`,
   );
   stmt.run(status, finishedAt, errorMessage, runId);
+}
+
+/**
+ * 走行中の進捗を runs テーブルに書き戻す (Issue #86)。
+ *   - `pages_done`: snapshot 完了したページ数 (revisit は加算しない側で揃える)。
+ *   - `queue_size`: frontier に残っている URL 数。
+ *   - `current_url`: 今 navigate しようとしている URL。
+ * BFS ループの先頭で 1 ページごとに呼ぶ想定なので軽い UPDATE 1 本。
+ */
+export function updateRunProgress(
+  db: Db,
+  runId: string,
+  pagesDone: number,
+  queueSize: number,
+  currentUrl: string | null,
+): void {
+  const stmt = db.$sqlite.prepare(
+    `UPDATE runs SET pages_done = ?, queue_size = ?, current_url = ? WHERE id = ?`,
+  );
+  stmt.run(pagesDone, queueSize, currentUrl, runId);
+}
+
+/**
+ * HAR (Playwright が context.close() で flush) のパスを runs に紐付ける。
+ * 失敗 run でも部分的に保存される可能性があるので caller が判断して呼ぶ。
+ */
+export function updateRunHarPath(db: Db, runId: string, harPath: string | null): void {
+  db.$sqlite.prepare(`UPDATE runs SET har_path = ? WHERE id = ?`).run(harPath, runId);
 }
 
 export function upsertPageState(db: Db, page: PageState): void {

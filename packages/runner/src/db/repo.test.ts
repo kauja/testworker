@@ -16,7 +16,11 @@ beforeEach(() => {
       started_at TEXT NOT NULL,
       finished_at TEXT,
       options_json TEXT NOT NULL,
-      error_message TEXT
+      error_message TEXT,
+      pages_done INTEGER NOT NULL DEFAULT 0,
+      queue_size INTEGER,
+      current_url TEXT,
+      har_path TEXT
     );
 
     CREATE TABLE page_states (
@@ -77,6 +81,10 @@ const run = {
     captureWebVitals: true,
   },
   errorMessage: null,
+  pagesDone: 0,
+  queueSize: 1,
+  currentUrl: 'https://example.com',
+  harPath: null,
 };
 
 describe('run repository writes', () => {

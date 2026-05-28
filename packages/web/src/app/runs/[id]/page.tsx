@@ -1,18 +1,40 @@
 import { notFound } from 'next/navigation';
-import { fetchGraph } from '@/lib/api';
+import { ApiError, fetchGraph, fetchRun } from '@/lib/api';
 import { GraphView } from '@/components/graph-view';
+import { AutoRefresh } from '@/components/auto-refresh';
+import { RunProgress } from '@/components/run-progress';
 
 export default async function RunPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  let graph;
+
+  let run;
   try {
-    graph = await fetchGraph(id);
-  } catch {
-    notFound();
+    run = await fetchRun(id);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) notFound();
+    throw err;
   }
+
+  const isLive = run.status === 'running' || run.status === 'queued';
+  const graph = await fetchGraph(id).catch(() => null);
+
   return (
     <div className="h-[calc(100dvh-3rem)]">
-      <GraphView graph={graph} />
+      {isLive && <AutoRefresh />}
+      {isLive && (
+        <div className="border-b border-line bg-bg-subtle px-4 py-3">
+          <RunProgress run={run} />
+        </div>
+      )}
+      <div className={isLive ? 'h-[calc(100%-5.5rem)]' : 'h-full'}>
+        {graph ? (
+          <GraphView graph={graph} />
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm text-ink-muted">
+            graph をまだ取得できません… (走行中の最初のページが完了すると表示されます)
+          </div>
+        )}
+      </div>
     </div>
   );
 }

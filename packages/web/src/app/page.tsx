@@ -5,6 +5,7 @@ import { NewRunForm } from '@/components/new-run-form';
 import { RetryButton } from '@/components/retry-button';
 import { RunsAutoRefresh } from '@/components/runs-auto-refresh';
 import { TimeStamp } from '@/components/time-stamp';
+import { RunProgress } from '@/components/run-progress';
 
 interface PageError {
   kind: 'unreachable' | 'db_not_ready' | 'http';
@@ -72,6 +73,18 @@ export default async function HomePage() {
                     tone={r.errorCount > 0 ? 'bad' : undefined}
                   />
                 </div>
+                {(r.run.status === 'running' || r.run.status === 'queued') && (
+                  <div className="mt-3">
+                    <RunProgress run={r.run} compact />
+                  </div>
+                )}
+                {/* FAILED run の理由を card 内で見えるように — 詳細を開かなくても何で fail したか分かる (#168) */}
+                {(r.run.status === 'failed' || r.run.status === 'canceled') &&
+                  r.run.errorMessage && (
+                    <div className="mt-3 rounded border border-bad/30 bg-bad/5 px-2 py-1.5 font-mono text-[11px] leading-snug text-bad">
+                      {firstLineSnippet(r.run.errorMessage, 120)}
+                    </div>
+                  )}
               </Link>
             ))}
           </div>
@@ -111,6 +124,16 @@ function ApiErrorBanner({ error }: { error: PageError }) {
       </details>
     </div>
   );
+}
+
+/**
+ * errorMessage の先頭 1 行を最大 maxLen 文字で切り詰めて返す (#168)。
+ * Playwright の長い stack の最初のサマリだけを card に見せる用。
+ */
+function firstLineSnippet(message: string, maxLen: number): string {
+  const firstLine = message.split('\n')[0]?.trim() ?? '';
+  if (firstLine.length <= maxLen) return firstLine;
+  return `${firstLine.slice(0, maxLen).trimEnd()}…`;
 }
 
 function Stat({ label, value, tone }: { label: string; value: number; tone?: 'bad' | 'ok' }) {
