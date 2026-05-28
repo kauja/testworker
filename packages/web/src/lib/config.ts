@@ -10,6 +10,8 @@
  * を別途追加する)。
  */
 
+export const DEFAULT_REPO_URL = 'https://github.com/kauja/testworker';
+
 export interface WebConfig {
   /**
    * UI を閲覧専用にする。 true なら edit 系 UI を hide / disable し、 banner を表示。
@@ -17,6 +19,12 @@ export interface WebConfig {
    * env: `TESTWORKER_READ_ONLY=1` / `true` / `yes` で有効化。
    */
   readOnly: boolean;
+  /**
+   * Header の "GitHub" link が指すリポジトリ URL。
+   * fork / self-host で別 URL を指したい場合に上書きできる。
+   * env: `NEXT_PUBLIC_REPO_URL` (default: `DEFAULT_REPO_URL`)。
+   */
+  repoUrl: string;
 }
 
 function truthy(value: string | undefined): boolean {
@@ -25,8 +33,21 @@ function truthy(value: string | undefined): boolean {
   return v === '1' || v === 'true' || v === 'yes' || v === 'on';
 }
 
+function normalizeRepoUrl(value: string | undefined): string {
+  const trimmed = value?.trim();
+  if (!trimmed) return DEFAULT_REPO_URL;
+  try {
+    const u = new URL(trimmed);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return DEFAULT_REPO_URL;
+    return u.toString();
+  } catch {
+    return DEFAULT_REPO_URL;
+  }
+}
+
 export function getWebConfig(): WebConfig {
   return {
     readOnly: truthy(process.env.TESTWORKER_READ_ONLY),
+    repoUrl: normalizeRepoUrl(process.env.NEXT_PUBLIC_REPO_URL),
   };
 }
