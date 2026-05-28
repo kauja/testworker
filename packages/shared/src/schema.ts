@@ -38,6 +38,29 @@ export const CrawlOptions = z.object({
 });
 export type CrawlOptions = z.infer<typeof CrawlOptions>;
 
+export const RunLaunchInput = CrawlOptions.pick({
+  startUrl: true,
+  maxDepth: true,
+  maxPages: true,
+  sameOriginOnly: true,
+  respectRobots: true,
+  navTimeoutMs: true,
+  waitAfterNavMs: true,
+  viewport: true,
+  includeUrlPatterns: true,
+  excludeUrlPatterns: true,
+  userAgent: true,
+  captureWebVitals: true,
+});
+export type RunLaunchInput = z.infer<typeof RunLaunchInput>;
+
+export const RunLaunchResponse = z.object({
+  accepted: z.literal(true),
+  acceptedAt: z.string(),
+  options: RunLaunchInput,
+});
+export type RunLaunchResponse = z.infer<typeof RunLaunchResponse>;
+
 export const Run = z.object({
   id: z.string(),
   startUrl: z.string(),

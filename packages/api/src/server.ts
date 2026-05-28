@@ -4,6 +4,7 @@ import { Readable } from 'node:stream';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serve } from '@hono/node-server';
+import { RunLaunchInput } from '@testworker/shared';
 import { openReadDb } from './db.js';
 import {
   getErrorGroups,
@@ -13,6 +14,7 @@ import {
   listRuns,
   previousRunOf,
 } from './queries.js';
+import { launchCrawl } from './run-launcher.js';
 
 const PORT = Number(process.env.API_PORT ?? 3001);
 const DB_PATH = process.env.DB_PATH ?? './data/db/testworker.sqlite';
@@ -95,6 +97,7 @@ const CORS_ORIGIN: string | string[] = (() => {
 // 秘密情報が cross-origin で漏れるのを SOP (Same-Origin Policy) で防ぐため、
 // /assets/* には Access-Control-Allow-Origin を付けない。
 app.use('/health', cors({ origin: CORS_ORIGIN }));
+app.use('/runs', cors({ origin: CORS_ORIGIN }));
 app.use('/runs/*', cors({ origin: CORS_ORIGIN }));
 app.use('/pages/*', cors({ origin: CORS_ORIGIN }));
 
@@ -104,6 +107,38 @@ app.get('/runs', (c) => {
   const db = ensureDb();
   if (!db) return c.json(DB_NOT_READY_BODY, 503);
   return c.json(listRuns(db));
+});
+
+app.post('/runs', async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid_json' }, 400);
+  }
+
+  const parsed = RunLaunchInput.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'invalid_run_options', issues: parsed.error.flatten() }, 400);
+  }
+
+  try {
+    launchCrawl(parsed.data);
+  } catch (err) {
+    return c.json(
+      { error: 'runner_launch_failed', message: err instanceof Error ? err.message : String(err) },
+      500,
+    );
+  }
+
+  return c.json(
+    {
+      accepted: true,
+      acceptedAt: new Date().toISOString(),
+      options: parsed.data,
+    },
+    202,
+  );
 });
 
 app.get('/runs/:id/graph', (c) => {
