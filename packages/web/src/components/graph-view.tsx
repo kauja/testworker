@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -49,6 +49,12 @@ function layout(pages: PageState[]): Record<string, { x: number; y: number }> {
 
 export function GraphView({ graph }: { graph: GraphPayload }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // ReactFlow v12 の MiniMap は viewport サイズに応じて SVG の shapeRendering
+  // 属性を SSR と CSR で変える (`crispEdges` ↔ `geometricPrecision`) ため、
+  // Next.js App Router の 'use client' コンポーネントでも SSR pass で
+  // hydration mismatch が出る (#183)。 client mount 後だけ描画する。
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const nodes = useMemo<Node[]>(() => {
     const positions = layout(graph.pages);
@@ -171,7 +177,9 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#1c222b" />
           <Controls showInteractive={false} />
-          <MiniMap pannable zoomable nodeColor="#222831" maskColor="rgba(11,13,16,0.7)" />
+          {mounted && (
+            <MiniMap pannable zoomable nodeColor="#222831" maskColor="rgba(11,13,16,0.7)" />
+          )}
         </ReactFlow>
       </div>
       <PageDetailPanel pageId={selectedId} onSelectPage={setSelectedId} />
