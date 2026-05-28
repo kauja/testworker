@@ -4,6 +4,7 @@ import { fetchErrorGroups, fetchGraph } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { PrintButton } from '@/components/print-button';
 import { TimeStamp } from '@/components/time-stamp';
+import { computePageLabels } from '@/lib/page-label';
 
 /**
  * Run の静的レポート (Intent #127 / Bolt: 静的レポート HTML エクスポート)。
@@ -29,6 +30,8 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
     const errB = b.errorCount + b.consoleErrorCount + b.networkErrorCount;
     return errB - errA || a.depth - b.depth || a.url.localeCompare(b.url);
   });
+  // 同 title 重複 (例: 全部 "testworker") を URL path で差別化 (#174)。
+  const labels = computePageLabels(graph.pages);
 
   const totalErrors = graph.pages.reduce(
     (s, p) => s + p.errorCount + p.consoleErrorCount + p.networkErrorCount,
@@ -97,7 +100,9 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
                 >
                   <td className="px-2 py-1.5 font-mono">{p.depth}</td>
                   <td className="px-2 py-1.5">
-                    <div className="font-medium">{p.title || '(untitled)'}</div>
+                    <div className="font-medium" title={p.title}>
+                      {labels.get(p.id) ?? p.title ?? '(untitled)'}
+                    </div>
                     <div className="truncate font-mono text-[10px] text-ink-muted">{p.url}</div>
                   </td>
                   <td
