@@ -83,7 +83,7 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
   return (
     <div className="relative grid h-full grid-cols-[1fr_360px]">
       <div className="relative">
-        <div className="pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-3 rounded-md border border-line bg-bg-panel/80 px-3 py-2 text-xs backdrop-blur">
+        <div className="absolute left-4 top-4 z-10 flex items-center gap-3 rounded-md border border-line bg-bg-panel/80 px-3 py-2 text-xs backdrop-blur">
           <span className="truncate text-ink-muted">{graph.run.startUrl}</span>
           <span className="text-ink-faint">·</span>
           <span className="text-ink">{graph.pages.length} pages</span>
@@ -92,7 +92,13 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
           {errorTotal > 0 && (
             <>
               <span className="text-ink-faint">·</span>
-              <span className="text-bad">{errorTotal} errors</span>
+              <a
+                href={`/runs/${graph.run.id}/errors`}
+                className="text-bad hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-bad"
+                title="エラーグループ表示 (Issue #88)"
+              >
+                {errorTotal} errors →
+              </a>
             </>
           )}
         </div>

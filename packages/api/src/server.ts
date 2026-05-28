@@ -5,7 +5,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serve } from '@hono/node-server';
 import { openReadDb } from './db.js';
-import { getGraph, getPageDetail, listRuns } from './queries.js';
+import { getErrorGroups, getGraph, getPageDetail, listRuns } from './queries.js';
 
 const PORT = Number(process.env.API_PORT ?? 3001);
 const DB_PATH = process.env.DB_PATH ?? './data/db/testworker.sqlite';
@@ -66,6 +66,12 @@ app.get('/runs/:id/graph', (c) => {
   const graph = getGraph(db, c.req.param('id'));
   if (!graph) return c.json({ error: 'not_found' }, 404);
   return c.json(graph);
+});
+
+app.get('/runs/:id/errors/grouped', (c) => {
+  const groups = getErrorGroups(db, c.req.param('id'));
+  if (groups == null) return c.json({ error: 'not_found' }, 404);
+  return c.json(groups);
 });
 
 app.get('/pages/:id', (c) => {

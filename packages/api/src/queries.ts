@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import type {
   ConsoleEntry,
   Edge,
+  ErrorGroup,
   GraphPayload,
   NetworkEntry,
   PageDetail,
@@ -278,4 +280,126 @@ export function getPageDetail(db: Database.Database, pageStateId: string): PageD
     db.prepare(`SELECT * FROM edges WHERE from_page_state_id = ?`).all(pageStateId) as EdgeRow[]
   ).map(rowToEdge);
   return { page, console: consoleEntries, network, errors, incoming, outgoing };
+}
+
+/**
+ * stack trace を group key にできる程度に normalize する (Issue #88)。
+ *   - 行末空白除去
+ *   - 絶対パスっぽい segment (`(/foo/bar/...)` や `at /foo/...`) の path 部分を伏せる
+ *   - chrome-extension:// / webpack:// などのスキーム + path 部分を `<scheme>` に置換
+ *   - 行番号 / 列番号は維持 (`:123:45` は残す) — 場所の固定情報として有用
+ */
+function normalizeStack(stack: string | null): string {
+  if (!stack) return '';
+  return stack
+    .split('\n')
+    .map((line) => {
+      let l = line.trimEnd();
+      // file:///abs/path/foo.js:1:1 → file:///<path>/foo.js:1:1
+      l = l.replace(
+        /(?:file|https?|webpack|chrome-extension):\/\/[^\s)]*?([^\s/)]+):(\d+):(\d+)/g,
+        '<src>/$1:$2:$3',
+      );
+      // bare absolute path /Users/... / /home/... / /workspace/...
+      l = l.replace(
+        /\/(Users|home|workspace|var|tmp|opt)\/[^\s)]+?([^\s/)]+):(\d+):(\d+)/g,
+        '<src>/$2:$3:$4',
+      );
+      return l;
+    })
+    .join('\n');
+}
+
+function fingerprintError(kind: string, message: string, stack: string | null): string {
+  const normalized = normalizeStack(stack);
+  // message を含めることで「同 stack 上で違う message」 (例: 値違いの assertion failure)
+  // を別グループにする。 ただし末尾 `: {value}` のような揺らぎ部分は適度に削る。
+  const trimmedMessage = message.replace(/\s+/g, ' ').trim().slice(0, 200);
+  const input = `${kind}\n${trimmedMessage}\n${normalized}`;
+  return createHash('sha1').update(input).digest('hex').slice(0, 16);
+}
+
+interface ErrorRow {
+  id: string;
+  page_state_id: string;
+  kind: string;
+  message: string;
+  stack: string | null;
+  timestamp: string;
+}
+
+interface PageBriefRow {
+  id: string;
+  url: string;
+  title: string;
+}
+
+export function getErrorGroups(db: Database.Database, runId: string): ErrorGroup[] | null {
+  const runRow = db.prepare(`SELECT id FROM runs WHERE id = ?`).get(runId) as
+    | { id: string }
+    | undefined;
+  if (!runRow) return null;
+
+  // run 内の全 page_error を 1 クエリで JOIN して取得。
+  const rows = db
+    .prepare(
+      `SELECT e.id, e.page_state_id, e.kind, e.message, e.stack, e.timestamp,
+              p.url, p.title
+       FROM page_errors e
+       JOIN page_states p ON p.id = e.page_state_id
+       WHERE p.run_id = ?
+       ORDER BY e.timestamp`,
+    )
+    .all(runId) as Array<ErrorRow & { url: string; title: string }>;
+
+  interface GroupAcc {
+    fingerprint: string;
+    kind: ErrorGroup['kind'];
+    message: string;
+    stack: string | null;
+    count: number;
+    seenPages: Set<string>;
+    samplePages: ErrorGroup['samplePages'];
+  }
+
+  const groups = new Map<string, GroupAcc>();
+  for (const r of rows) {
+    const kind = r.kind as ErrorGroup['kind'];
+    const fp = fingerprintError(kind, r.message, r.stack);
+    let g = groups.get(fp);
+    if (!g) {
+      g = {
+        fingerprint: fp,
+        kind,
+        message: r.message,
+        stack: r.stack,
+        count: 0,
+        seenPages: new Set(),
+        samplePages: [],
+      };
+      groups.set(fp, g);
+    }
+    g.count += 1;
+    if (!g.seenPages.has(r.page_state_id)) {
+      g.seenPages.add(r.page_state_id);
+      if (g.samplePages.length < 10) {
+        g.samplePages.push({
+          pageStateId: r.page_state_id,
+          url: r.url,
+          title: r.title,
+        });
+      }
+    }
+  }
+  const out = Array.from(groups.values()).map<ErrorGroup>((g) => ({
+    fingerprint: g.fingerprint,
+    kind: g.kind,
+    message: g.message,
+    stack: g.stack,
+    count: g.count,
+    samplePages: g.samplePages,
+  }));
+  // 影響度の高い順 (count desc) で返す。 同 count は kind 順で安定化。
+  out.sort((a, b) => b.count - a.count || (a.kind < b.kind ? -1 : 1));
+  return out;
 }
