@@ -17,10 +17,12 @@ FROM base AS dev
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/api/package.json packages/api/
+COPY packages/runner/package.json packages/runner/
 # lockfile を尊重するが、 dev は workspace 部分編集での再 install を許容するため
 # --prefer-frozen-lockfile に留める (--frozen-lockfile だと bind mount での pnpm
 # install で lockfile drift が起きた瞬間 fail し、 開発体験が悪い)。
-RUN pnpm install --prefer-frozen-lockfile
+RUN pnpm install --prefer-frozen-lockfile \
+ && pnpm --filter @testworker/runner exec playwright install --with-deps chromium
 EXPOSE 3001
 CMD ["pnpm", "--filter", "@testworker/api", "run", "dev"]
 

@@ -17,6 +17,7 @@ export function optionsFromEnv(startUrl: string): CrawlOptions {
     maxDepth: numberFromEnv('MAX_DEPTH'),
     maxPages: numberFromEnv('MAX_PAGES'),
     sameOriginOnly: boolFromEnv('SAME_ORIGIN_ONLY'),
+    respectRobots: boolFromEnv('RESPECT_ROBOTS'),
     navTimeoutMs: numberFromEnv('NAV_TIMEOUT_MS'),
     waitAfterNavMs: numberFromEnv('WAIT_AFTER_NAV_MS'),
     captureWebVitals: boolFromEnv('CAPTURE_WEB_VITALS'),
