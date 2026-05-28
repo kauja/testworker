@@ -75,7 +75,11 @@ export const STRUCTURE_SCRIPT = `() => {
 export async function computeSignature(page: Page): Promise<PageSignature> {
   const url = page.url();
   const title = await page.title().catch(() => '');
-  const dom = (await page.evaluate(STRUCTURE_SCRIPT)) as {
+  // STRUCTURE_SCRIPT は `() => { ...; return { tokens, ... } }` のアロー関数リテラル文字列。
+  // page.evaluate(string) は文字列を expression として評価するため、 そのままだと結果は
+  // 「関数オブジェクト」になり呼び出されない (= dom.tokens が undefined になり crash)。
+  // IIFE 形にラップして「定義した関数を即実行した戻り値」を得る (Issue #135)。
+  const dom = (await page.evaluate(`(${STRUCTURE_SCRIPT})()`)) as {
     tokens: string;
     pathname: string;
     search: string;
