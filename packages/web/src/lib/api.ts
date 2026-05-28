@@ -5,9 +5,57 @@ const CLIENT_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:30
 
 const base = () => (typeof window === 'undefined' ? SERVER_BASE : CLIENT_BASE);
 
+/**
+ * api 呼び出しが失敗したときの error 種別 (#141)。
+ *  - `unreachable`: api server に到達不能 (fetch 自体が throw、 typically `ECONNREFUSED`)。
+ *      `make up` が走っていない / web より先に web を起動したケース。
+ *  - `db_not_ready`: api は応答するが DB が未マイグレート (HTTP 503 + `error: db_not_ready`)。
+ *      `make migrate` 実行で復旧する。
+ *  - `http`: その他の HTTP error (404 / 5xx 等)。
+ */
+export type ApiErrorKind = 'unreachable' | 'db_not_ready' | 'http';
+
+export class ApiError extends Error {
+  readonly kind: ApiErrorKind;
+  readonly status?: number;
+  readonly hint?: string;
+  constructor(kind: ApiErrorKind, message: string, opts?: { status?: number; hint?: string }) {
+    super(message);
+    this.name = 'ApiError';
+    this.kind = kind;
+    this.status = opts?.status;
+    this.hint = opts?.hint;
+  }
+}
+
 async function get<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${base()}${path}`, { cache: 'no-store', ...init });
-  if (!res.ok) throw new Error(`api ${path} ${res.status}`);
+  let res: Response;
+  try {
+    res = await fetch(`${base()}${path}`, { cache: 'no-store', ...init });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new ApiError('unreachable', `api ${path} unreachable: ${msg}`, {
+      hint: 'API server に到達できません。 `make up` で api コンテナが起動しているか確認してください。',
+    });
+  }
+  if (res.status === 503) {
+    let body: { error?: string; hint?: string } = {};
+    try {
+      body = (await res.json()) as typeof body;
+    } catch {
+      /* noop */
+    }
+    if (body.error === 'db_not_ready') {
+      throw new ApiError('db_not_ready', `api ${path} 503 db_not_ready`, {
+        status: 503,
+        hint: body.hint,
+      });
+    }
+    throw new ApiError('http', `api ${path} 503`, { status: 503 });
+  }
+  if (!res.ok) {
+    throw new ApiError('http', `api ${path} ${res.status}`, { status: res.status });
+  }
   return (await res.json()) as T;
 }
 
