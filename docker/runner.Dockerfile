@@ -2,7 +2,15 @@
 
 # Playwright 公式イメージ（Chromium 等を内蔵）。
 # https://mcr.microsoft.com/en-us/product/playwright/about
-FROM mcr.microsoft.com/playwright:v1.49.0-jammy
+#
+# version は pnpm-lock.yaml で実際に install される playwright と一致させる。
+# mismatch すると `headless_shell` 等の browser binary path が image 側と
+# install 後の Playwright で食い違い、 全 crawl が browserType.launch で fail
+# する (Issue #153)。 上げ方は:
+#   1. pnpm update playwright --filter @testworker/runner で lockfile 更新
+#   2. この FROM を同 version (X.Y.Z-jammy) に更新
+#   3. make up --build (or docker compose build runner)
+FROM mcr.microsoft.com/playwright:v1.60.0-jammy
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
