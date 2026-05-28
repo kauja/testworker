@@ -26,6 +26,9 @@ import { computeSignature } from './signature.js';
 import { collectInteractions, type Interaction } from './interactions.js';
 import { applyPageStateId, createMonitors } from './monitors.js';
 import { loadLoginScript } from '../auth/login.js';
+import { createRobotsCache, isAllowedByRobots } from './robots.js';
+
+const DEFAULT_ROBOTS_UA = 'testworker';
 
 export interface CrawlReport {
   run: Run;
@@ -90,6 +93,9 @@ export async function runCrawl(
 
     const startOrigin = new URL(options.startUrl).origin;
     const visitedSignatures = new Set<string>();
+    // robots.txt キャッシュ。 origin ごとに 1 回だけ fetch。 fail-open。
+    const robotsUserAgent = options.userAgent ?? DEFAULT_ROBOTS_UA;
+    const getRobots = options.respectRobots ? createRobotsCache(robotsUserAgent) : null;
     // frontier に投げる URL は post-goto で resolve した値で dedup する。
     // 旧実装は signature ベース dedup のみで、 SPA の共通 header/footer 由来の
     // 同一リンクがページ毎に何度も frontier に積まれ、 O(N×M) 回 goto / monitor /
@@ -119,6 +125,26 @@ export async function runCrawl(
         }
       }
       if (!urlMatches(task.url, options)) continue;
+
+      // robots.txt の Disallow に該当する URL は queue から落とす (Issue #101)。
+      // 同一 origin 制約と組み合わせる前提で、 origin ごとに 1 回 fetch。
+      // robots.txt 自体が取れない / 404 / timeout の場合は fail-open。
+      if (getRobots) {
+        let taskOrigin: string | null = null;
+        let taskPath = '/';
+        try {
+          const u = new URL(task.url);
+          taskOrigin = u.origin;
+          taskPath = u.pathname + u.search;
+        } catch {
+          continue;
+        }
+        const rules = await getRobots(taskOrigin);
+        if (!isAllowedByRobots(rules, taskPath)) {
+          console.warn(`[testworker] skipped by robots.txt: ${task.url}`);
+          continue;
+        }
+      }
 
       try {
         await page.goto(task.url, { waitUntil: 'load' });
