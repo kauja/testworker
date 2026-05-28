@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   ReactFlow,
   Background,
@@ -50,7 +51,15 @@ function layout(pages: PageState[]): Record<string, { x: number; y: number }> {
 }
 
 export function GraphView({ graph }: { graph: GraphPayload }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // report 等から `/runs/<id>?page=<pid>` で deep-link されたときに initial 選択
+  // 状態として反映する (#189)。 該当 page が graph に無ければ null。
+  const searchParams = useSearchParams();
+  const initialPageId = (() => {
+    const requested = searchParams.get('page');
+    if (!requested) return null;
+    return graph.pages.some((p) => p.id === requested) ? requested : null;
+  })();
+  const [selectedId, setSelectedId] = useState<string | null>(initialPageId);
   // ReactFlow v12 の MiniMap は viewport サイズに応じて SVG の shapeRendering
   // 属性を SSR と CSR で変える (`crispEdges` ↔ `geometricPrecision`) ため、
   // Next.js App Router の 'use client' コンポーネントでも SSR pass で
@@ -112,17 +121,17 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
 
   return (
     <div className="relative grid h-full grid-cols-[1fr_360px]">
-      <div className="relative">
+      <div className="flex h-full flex-col">
         {isFailed && (
-          <div
-            role="alert"
-            className="absolute inset-x-0 top-0 z-20 border-b border-bad/40 bg-bad/10 px-6 py-3 text-xs text-bad"
-          >
-            <div className="font-medium uppercase tracking-wider">
-              この run は {graph.run.status} 状態で終了しました
+          <div role="alert" className="border-b border-bad/40 bg-bad/10 px-6 py-3 text-xs text-bad">
+            <div className="flex items-baseline justify-between gap-3">
+              <div className="font-medium uppercase tracking-wider">
+                この run は {graph.run.status} 状態で終了しました
+              </div>
+              {graph.run.errorMessage && <CopyErrorButton message={graph.run.errorMessage} />}
             </div>
             {graph.run.errorMessage ? (
-              <pre className="mt-1.5 max-h-32 overflow-auto whitespace-pre-wrap font-mono text-[11px]">
+              <pre className="mt-1.5 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded border border-bad/30 bg-bg-panel/60 p-2 font-mono text-[11px] leading-relaxed">
                 {graph.run.errorMessage}
               </pre>
             ) : (
@@ -144,116 +153,132 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
             </div>
           </div>
         )}
-        <div
-          className={cn(
-            'absolute left-4 z-10 flex items-center gap-3 rounded-md border border-line bg-bg-panel/80 px-3 py-2 text-xs backdrop-blur',
-            isFailed ? 'top-24' : 'top-4',
-          )}
-        >
-          <span className="truncate text-ink-muted">{graph.run.startUrl}</span>
-          <span className="text-ink-faint">·</span>
-          <span className="text-ink">{graph.pages.length} pages</span>
-          <span className="text-ink-faint">·</span>
-          <span className="text-ink">{graph.edges.length} edges</span>
-          {errorTotal > 0 && (
-            <>
-              <span className="text-ink-faint">·</span>
-              <a
-                href={`/runs/${graph.run.id}/errors`}
-                className="text-bad hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-bad"
-                title="エラーグループ表示 (Issue #88)"
-              >
-                {errorTotal} errors →
-              </a>
-            </>
-          )}
-          <span className="text-ink-faint">·</span>
-          <a
-            href={`/runs/${graph.run.id}/diff`}
-            className="text-accent hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-            title="1 つ前の run との差分を表示 (Intent #125)"
-          >
-            diff →
-          </a>
-          <span className="text-ink-faint">·</span>
-          <a
-            href={`/runs/${graph.run.id}/report`}
-            className="text-ink-muted hover:text-accent hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-            title="静的レポート (印刷 / PDF 保存) Intent #127"
-          >
-            report →
-          </a>
-        </div>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          fitView
-          // 初期表示で graph 全体が画面に収まるようにする (#166)。
-          // padding を 0.1 まで絞ると 22 pages の run でも横方向の空白が消える。
-          fitViewOptions={{ padding: 0.1 }}
-          minZoom={0.2}
-          maxZoom={2}
-          proOptions={{ hideAttribution: true }}
-          onNodeClick={(_, n) => setSelectedId(n.id)}
-          aria-label="画面遷移グラフ (screen transition graph)"
-        >
-          <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#1c222b" />
-          <Controls
-            showInteractive={false}
-            // Next.js DevTools の N アイコンと左下端で被るのを避ける (#166)。
-            position="bottom-right"
-          />
-          {mounted && minimapVisible && (
-            <MiniMap
-              pannable
-              zoomable
-              nodeColor="#222831"
-              maskColor="rgba(11,13,16,0.7)"
-              position="top-right"
-              style={{ width: 160, height: 110 }}
-            />
-          )}
-          <Panel position="bottom-left">
-            <button
-              type="button"
-              onClick={() => setMinimapVisible((v) => !v)}
-              className="rounded border border-line bg-bg-panel/80 px-2 py-1 text-[10px] uppercase tracking-wider text-ink-muted backdrop-blur hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-              aria-pressed={minimapVisible}
-              title="minimap の表示を切り替え"
+        <div className="relative flex-1">
+          <div className="absolute left-4 top-4 z-10 flex items-center gap-3 rounded-md border border-line bg-bg-panel/80 px-3 py-2 text-xs backdrop-blur">
+            <span className="truncate text-ink-muted">{graph.run.startUrl}</span>
+            <span className="text-ink-faint">·</span>
+            <span className="text-ink">{graph.pages.length} pages</span>
+            <span className="text-ink-faint">·</span>
+            <span className="text-ink">{graph.edges.length} edges</span>
+            {errorTotal > 0 && (
+              <>
+                <span className="text-ink-faint">·</span>
+                <a
+                  href={`/runs/${graph.run.id}/errors`}
+                  className="text-bad hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-bad"
+                  title="エラーグループ表示 (Issue #88)"
+                >
+                  {errorTotal} errors →
+                </a>
+              </>
+            )}
+            <span className="text-ink-faint">·</span>
+            <a
+              href={`/runs/${graph.run.id}/diff`}
+              className="text-accent hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+              title="1 つ前の run との差分を表示 (Intent #125)"
             >
-              {minimapVisible ? 'minimap: on' : 'minimap: off'}
-            </button>
-          </Panel>
-          {slowPages.length > 0 && (
-            <Panel position="top-right">
-              <div className="max-w-[300px] rounded border border-line bg-bg-panel/80 p-2 text-[11px] backdrop-blur">
-                <div className="mb-1 text-[10px] uppercase tracking-wider text-ink-faint">
-                  Performance Top 5
-                </div>
-                <ol className="space-y-1">
-                  {slowPages.map(({ page, primary }) => (
-                    <li key={page.id}>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedId(page.id)}
-                        className="grid w-full grid-cols-[1fr_auto] items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-bg-subtle focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-                      >
-                        <span className="truncate text-ink-muted">{page.title || page.url}</span>
-                        <span className={cn('font-mono', perfToneClass(primary.tone))}>
-                          {primary.label} {formatPerfValue(primary)}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ol>
-              </div>
+              diff →
+            </a>
+            <span className="text-ink-faint">·</span>
+            <a
+              href={`/runs/${graph.run.id}/report`}
+              className="text-ink-muted hover:text-accent hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+              title="静的レポート (印刷 / PDF 保存) Intent #127"
+            >
+              report →
+            </a>
+          </div>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            fitView
+            // 初期表示で graph 全体が画面に収まるようにする (#166)。
+            // padding を 0.1 まで絞ると 22 pages の run でも横方向の空白が消える。
+            fitViewOptions={{ padding: 0.1 }}
+            minZoom={0.2}
+            maxZoom={2}
+            proOptions={{ hideAttribution: true }}
+            onNodeClick={(_, n) => setSelectedId(n.id)}
+            aria-label="画面遷移グラフ (screen transition graph)"
+          >
+            <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#1c222b" />
+            <Controls
+              showInteractive={false}
+              // Next.js DevTools の N アイコンと左下端で被るのを避ける (#166)。
+              position="bottom-right"
+            />
+            {mounted && minimapVisible && (
+              <MiniMap
+                pannable
+                zoomable
+                nodeColor="#222831"
+                maskColor="rgba(11,13,16,0.7)"
+                position="top-right"
+                style={{ width: 160, height: 110 }}
+              />
+            )}
+            <Panel position="bottom-left">
+              <button
+                type="button"
+                onClick={() => setMinimapVisible((v) => !v)}
+                className="rounded border border-line bg-bg-panel/80 px-2 py-1 text-[10px] uppercase tracking-wider text-ink-muted backdrop-blur hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+                aria-pressed={minimapVisible}
+                title="minimap の表示を切り替え"
+              >
+                {minimapVisible ? 'minimap: on' : 'minimap: off'}
+              </button>
             </Panel>
-          )}
-        </ReactFlow>
+            {slowPages.length > 0 && !minimapVisible && (
+              <Panel position="top-right">
+                <div className="max-w-[300px] rounded border border-line bg-bg-panel/80 p-2 text-[11px] backdrop-blur">
+                  <div className="mb-1 text-[10px] uppercase tracking-wider text-ink-faint">
+                    Performance Top 5
+                  </div>
+                  <ol className="space-y-1">
+                    {slowPages.map(({ page, primary }) => (
+                      <li key={page.id}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedId(page.id)}
+                          className="grid w-full grid-cols-[1fr_auto] items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-bg-subtle focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+                        >
+                          <span className="truncate text-ink-muted">{page.title || page.url}</span>
+                          <span className={cn('font-mono', perfToneClass(primary.tone))}>
+                            {primary.label} {formatPerfValue(primary)}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              </Panel>
+            )}
+          </ReactFlow>
+        </div>
       </div>
       <PageDetailPanel pageId={selectedId} onSelectPage={setSelectedId} />
     </div>
+  );
+}
+
+function CopyErrorButton({ message }: { message: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void navigator.clipboard.writeText(message).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+      className="shrink-0 rounded border border-bad/40 bg-bad/15 px-2 py-0.5 text-[10px] uppercase tracking-wider text-bad hover:bg-bad/25 focus-visible:outline focus-visible:outline-1 focus-visible:outline-bad"
+      aria-label="errorMessage の全文をコピー"
+    >
+      {copied ? 'copied' : 'copy'}
+    </button>
   );
 }
 
