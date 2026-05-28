@@ -25,6 +25,7 @@ import {
 import { computeSignature } from './signature.js';
 import { collectInteractions, type Interaction } from './interactions.js';
 import { applyPageStateId, createMonitors } from './monitors.js';
+import { collectWebVitals, installWebVitals } from './web-vitals.js';
 import { loadLoginScript } from '../auth/login.js';
 import { createRobotsCache, isAllowedByRobots } from './robots.js';
 
@@ -78,6 +79,9 @@ export async function runCrawl(
       userAgent: options.userAgent,
       storageState: options.storageStatePath,
     });
+    if (options.captureWebVitals) {
+      await installWebVitals(context);
+    }
 
     const monitors = createMonitors();
     monitors.bindContext(context);
@@ -215,6 +219,7 @@ export async function runCrawl(
       const consoleErrCount = snap.console.filter((c) => c.level === 'error').length;
       const networkErrCount = snap.network.filter((n) => n.failed || (n.status ?? 0) >= 400).length;
       const errCount = snap.errors.length;
+      const metrics = options.captureWebVitals ? await collectWebVitals(page) : {};
 
       const pageState: PageState = {
         id: pageStateId,
@@ -229,6 +234,7 @@ export async function runCrawl(
         errorCount: errCount,
         consoleErrorCount: consoleErrCount,
         networkErrorCount: networkErrCount,
+        metrics,
       };
       upsertPageState(db, pageState);
       insertConsoleBatch(db, applyPageStateId(snap.console, pageStateId));

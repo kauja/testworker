@@ -14,6 +14,7 @@ describe('CrawlOptions', () => {
       viewport: { width: 1280, height: 800 },
       includeUrlPatterns: [],
       excludeUrlPatterns: [],
+      captureWebVitals: true,
     });
   });
 

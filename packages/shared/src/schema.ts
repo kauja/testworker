@@ -34,6 +34,7 @@ export const CrawlOptions = z.object({
   includeUrlPatterns: z.array(z.string()).default([]),
   excludeUrlPatterns: z.array(z.string()).default([]),
   userAgent: z.string().optional(),
+  captureWebVitals: z.boolean().default(true),
 });
 export type CrawlOptions = z.infer<typeof CrawlOptions>;
 
@@ -47,6 +48,15 @@ export const Run = z.object({
   errorMessage: z.string().nullable(),
 });
 export type Run = z.infer<typeof Run>;
+
+export const PageMetrics = z.object({
+  lcp: z.number().nonnegative().nullable().optional(),
+  cls: z.number().nonnegative().nullable().optional(),
+  inp: z.number().nonnegative().nullable().optional(),
+  ttfb: z.number().nonnegative().nullable().optional(),
+  fcp: z.number().nonnegative().nullable().optional(),
+});
+export type PageMetrics = z.infer<typeof PageMetrics>;
 
 export const PageState = z.object({
   id: z.string(),
@@ -64,6 +74,7 @@ export const PageState = z.object({
   errorCount: z.number().int().min(0).default(0),
   consoleErrorCount: z.number().int().min(0).default(0),
   networkErrorCount: z.number().int().min(0).default(0),
+  metrics: PageMetrics.default({}),
 });
 export type PageState = z.infer<typeof PageState>;
 

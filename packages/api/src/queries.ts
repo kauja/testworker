@@ -8,13 +8,14 @@ import type {
   NetworkEntry,
   PageDetail,
   PageError,
+  PageMetrics,
   PageState,
   Run,
   RunDiff,
   RunDiffPage,
   RunSummary,
 } from '@testworker/shared';
-import { CrawlOptions } from '@testworker/shared';
+import { CrawlOptions, PageMetrics as PageMetricsSchema } from '@testworker/shared';
 
 interface RunRow {
   id: string;
@@ -40,6 +41,7 @@ interface PageRow {
   error_count: number;
   console_error_count: number;
   network_error_count: number;
+  metrics_json: string | null;
 }
 
 interface EdgeRow {
@@ -121,6 +123,8 @@ export function rowToRun(row: RunRow): Run {
         excludeUrlPatterns: Array.isArray(validFields.excludeUrlPatterns)
           ? (validFields.excludeUrlPatterns as string[])
           : [],
+        captureWebVitals:
+          typeof validFields.captureWebVitals === 'boolean' ? validFields.captureWebVitals : true,
       } as CrawlOptions;
     }
   }
@@ -133,6 +137,17 @@ export function rowToRun(row: RunRow): Run {
     options,
     errorMessage: row.error_message,
   };
+}
+
+function parsePageMetrics(raw: string | null): PageMetrics {
+  if (!raw) return {};
+  try {
+    const parsed = PageMetricsSchema.safeParse(JSON.parse(raw));
+    if (parsed.success) return parsed.data;
+  } catch {
+    // Legacy / partial rows should still render. Treat bad metrics JSON as absent.
+  }
+  return {};
 }
 
 function rowToPage(row: PageRow): PageState {
@@ -149,6 +164,7 @@ function rowToPage(row: PageRow): PageState {
     errorCount: row.error_count,
     consoleErrorCount: row.console_error_count,
     networkErrorCount: row.network_error_count,
+    metrics: parsePageMetrics(row.metrics_json),
   };
 }
 
