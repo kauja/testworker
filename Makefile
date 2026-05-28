@@ -42,4 +42,28 @@ clean-data: ## ./data 配下を消す（DB / スクショ）
 	rm -rf data/db data/runs
 	mkdir -p data
 
-.PHONY: help up down logs migrate crawl shell clean-data
+web-reset: ## web の Next.js cache (.next / .swc) を消して再起動 (#221)
+	# branch switch / merge / rebase 後に next dev の SWC AST cache が
+	# stale 化し「Merge conflict marker encountered」 等で web が silent 500
+	# になる問題の workaround。 cold start ぶん 10-20 秒余計にかかる。
+	rm -rf packages/web/.next packages/web/.swc
+	docker compose restart web
+
+doctor: ## 環境診断: docker / api / web / DB / runner image を確認 (#221)
+	@echo "=== docker version ==="
+	@docker version --format '{{.Client.Version}} (server: {{.Server.Version}})' 2>/dev/null || echo "docker not available"
+	@echo "=== docker compose services ==="
+	@docker compose ps --format '  {{.Service}}: {{.Status}}' 2>/dev/null || echo "  compose not running"
+	@echo "=== api /health ==="
+	@curl -sS -m 3 http://localhost:$${API_PORT:-3001}/health | head -c 200 || echo "  unreachable"
+	@echo
+	@echo "=== web / ==="
+	@curl -sS -m 3 -o /dev/null -w "  HTTP %{http_code}\n" http://localhost:$${WEB_PORT:-3000}/ || echo "  unreachable"
+	@echo "=== DB ==="
+	@ls -la data/db/testworker.sqlite 2>/dev/null || echo "  data/db/testworker.sqlite not found — run \`make migrate\`"
+	@echo "=== web cache ==="
+	@du -sh packages/web/.next 2>/dev/null || echo "  no .next cache yet"
+	@du -sh packages/web/.swc 2>/dev/null || echo "  no .swc cache yet"
+	@echo "  if web returns silent 500 with the source intact, run \`make web-reset\`"
+
+.PHONY: help up down logs migrate crawl shell clean-data web-reset doctor

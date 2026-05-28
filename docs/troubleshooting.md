@@ -124,8 +124,36 @@ make crawl URL=http://localhost:3000   # NOT https://localhost:3000
 
 どうしても https を使うなら、 開発用 CA (mkcert 等) を OS に登録するか、 `chromium.launch({ ignoreHTTPSErrors: true })` を patch する (将来 issue 化)。
 
+## 6. ホストのファイルは健全なのに web が全 route 500 (Internal Server Error)
+
+### 症状
+
+```
+Error:   x Merge conflict marker encountered.
+    ,-[ /workspace/packages/web/src/lib/api.ts:34:1]
+```
+
+ホスト側のソースに `<<<<<<<` 等の marker は無いのに、 `next dev` の SWC AST がブランチ切替前後の cache を握り続けて 500 を吐く。 `docker compose restart web` 単独では治らない。
+
+### 原因
+
+`next dev` の SWC / webpack persistent cache (`packages/web/.next/cache` および `.swc/`) が bind mount 越しに stale 化。 branch switch / merge / rebase 後にファイル mtime と AST cache の整合が壊れる (#221)。
+
+### 解決
+
+ワンコマンドで cache を捨てて web を再起動:
+
+```bash
+make web-reset
+```
+
+内部で `rm -rf packages/web/.next packages/web/.swc` → `docker compose restart web`。 cold start ぶん 10〜20 秒余計にかかるが、 silent 500 は確実に消える。
+
+予防的に毎起動で cache を消したい場合は、 web service を一旦停止してから `make up` する (`make down && make up`)。
+
 ## 関連
 
 - Issue #128 (intent: 対象化の容易さ)
 - Issue #93/#94 (sameOrigin redirect / frontier dedup) — 既に修正済み
 - Issue #101 (respect-robots) — 既に実装済み
+- Issue #221 (`.next` / `.swc` cache 汚染検知 / 自動 reset)
