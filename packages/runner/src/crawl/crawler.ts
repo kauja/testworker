@@ -173,7 +173,7 @@ export async function runCrawl(
       }
 
       try {
-        await page.goto(task.url, { waitUntil: 'load' });
+        await page.goto(task.url, { waitUntil: options.waitStrategy });
       } catch (err) {
         clog.warn({ url: task.url, err: (err as Error).message }, 'nav failed');
         // 失敗した遷移中に発生した console / pageerror / request イベントが

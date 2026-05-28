@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
-import { log } from '@testworker/shared';
+import { log, WaitStrategy } from '@testworker/shared';
 import { openDb } from './db/client.js';
 import { migrate } from './db/migrate.js';
 import { loadRunnerEnv, optionsFromEnv } from './config.js';
@@ -14,6 +14,7 @@ async function main(): Promise<void> {
       'max-pages': { type: 'string' },
       'nav-timeout-ms': { type: 'string' },
       'wait-after-nav-ms': { type: 'string' },
+      'wait-strategy': { type: 'string' },
       viewport: { type: 'string' },
       'include-pattern': { type: 'string', multiple: true },
       'exclude-pattern': { type: 'string', multiple: true },
@@ -47,6 +48,9 @@ async function main(): Promise<void> {
     ...(values['max-pages'] ? { maxPages: Number(values['max-pages']) } : {}),
     ...(values['nav-timeout-ms'] ? { navTimeoutMs: Number(values['nav-timeout-ms']) } : {}),
     ...(values['wait-after-nav-ms'] ? { waitAfterNavMs: Number(values['wait-after-nav-ms']) } : {}),
+    ...(values['wait-strategy']
+      ? { waitStrategy: WaitStrategy.parse(values['wait-strategy']) }
+      : {}),
     ...(values.viewport ? { viewport: parseViewport(values.viewport) } : {}),
     ...(values['include-pattern']
       ? { includeUrlPatterns: toStringArray(values['include-pattern']) }

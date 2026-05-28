@@ -3,6 +3,15 @@ import { z } from 'zod';
 export const RunStatus = z.enum(['queued', 'running', 'completed', 'failed', 'canceled']);
 export type RunStatus = z.infer<typeof RunStatus>;
 
+/**
+ * page.goto の waitUntil に渡す navigation 完了判定 (Issue #200)。
+ * - load: load イベントまで待つ (従来の挙動)
+ * - domcontentloaded: DOMContentLoaded まで (最速、 sub-resource を待たない)
+ * - networkidle: ネットワークが落ち着くまで (SPA / 遅延ロード向け、 最も遅い)
+ */
+export const WaitStrategy = z.enum(['load', 'domcontentloaded', 'networkidle']);
+export type WaitStrategy = z.infer<typeof WaitStrategy>;
+
 export const NavigationTrigger = z.enum([
   'initial',
   'link',
@@ -26,6 +35,11 @@ export const CrawlOptions = z.object({
   respectRobots: z.boolean().default(true),
   navTimeoutMs: z.number().int().min(1000).max(120_000).default(15_000),
   waitAfterNavMs: z.number().int().min(0).max(10_000).default(500),
+  /**
+   * page.goto の waitUntil。 default 'load' で従来挙動を維持 (後方互換)。
+   * networkidle は navTimeoutMs を超えやすいので timeout と整合させて使う。
+   */
+  waitStrategy: WaitStrategy.default('load'),
   viewport: z
     .object({ width: z.number().int().positive(), height: z.number().int().positive() })
     .default({ width: 1280, height: 800 }),
