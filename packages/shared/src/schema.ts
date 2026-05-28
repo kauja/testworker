@@ -19,6 +19,11 @@ export const CrawlOptions = z.object({
   maxDepth: z.number().int().min(0).max(20).default(3),
   maxPages: z.number().int().min(1).max(2000).default(50),
   sameOriginOnly: z.boolean().default(true),
+  /**
+   * robots.txt の Disallow / Allow を遵守するか。 default true (安全側)。
+   * false にすると robots.txt を無視して全 URL を踏みに行く (Issue #101)。
+   */
+  respectRobots: z.boolean().default(true),
   navTimeoutMs: z.number().int().min(1000).max(120_000).default(15_000),
   waitAfterNavMs: z.number().int().min(0).max(10_000).default(500),
   viewport: z
