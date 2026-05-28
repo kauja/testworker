@@ -1,4 +1,11 @@
-import type { ErrorGroup, GraphPayload, PageDetail, RunDiff, RunSummary } from '@testworker/shared';
+import type {
+  ErrorGroup,
+  GraphPayload,
+  PageDetail,
+  Run,
+  RunDiff,
+  RunSummary,
+} from '@testworker/shared';
 
 const SERVER_BASE = process.env.API_BASE_URL ?? 'http://api:3001';
 const CLIENT_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001';
@@ -62,6 +69,7 @@ async function get<T>(path: string, init?: RequestInit): Promise<T> {
 export const apiBase = base;
 
 export const fetchRuns = (init?: RequestInit) => get<RunSummary[]>('/runs', init);
+export const fetchRun = (runId: string, init?: RequestInit) => get<Run>(`/runs/${runId}`, init);
 export const fetchGraph = (runId: string, init?: RequestInit) =>
   get<GraphPayload>(`/runs/${runId}/graph`, init);
 export const fetchPage = (pageId: string, init?: RequestInit) =>

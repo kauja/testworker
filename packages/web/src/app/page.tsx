@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { ApiError, fetchRuns } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { RetryButton } from '@/components/retry-button';
+import { AutoRefresh } from '@/components/auto-refresh';
+import { RunProgress } from '@/components/run-progress';
 
 interface PageError {
   kind: 'unreachable' | 'db_not_ready' | 'http';
@@ -22,8 +24,11 @@ export default async function HomePage() {
     }
   }
 
+  const hasRunningRun = runs.some((r) => r.run.status === 'running' || r.run.status === 'queued');
+
   return (
     <div className="mx-auto max-w-screen-2xl px-6 py-10">
+      {hasRunningRun && <AutoRefresh />}
       <div className="mb-8 flex items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Runs</h1>
@@ -78,6 +83,11 @@ export default async function HomePage() {
                 tone={r.errorCount > 0 ? 'bad' : undefined}
               />
             </div>
+            {(r.run.status === 'running' || r.run.status === 'queued') && (
+              <div className="mt-3">
+                <RunProgress run={r.run} compact />
+              </div>
+            )}
           </Link>
         ))}
       </div>

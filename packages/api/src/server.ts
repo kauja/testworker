@@ -9,6 +9,7 @@ import {
   getErrorGroups,
   getGraph,
   getPageDetail,
+  getRun,
   getRunDiff,
   listRuns,
   previousRunOf,
@@ -104,6 +105,19 @@ app.get('/runs', (c) => {
   const db = ensureDb();
   if (!db) return c.json(DB_NOT_READY_BODY, 503);
   return c.json(listRuns(db));
+});
+
+app.get('/runs/:id', (c) => {
+  const db = ensureDb();
+  if (!db) return c.json(DB_NOT_READY_BODY, 503);
+  const run = getRun(db, c.req.param('id'));
+  if (!run) return c.json({ error: 'not_found' }, 404);
+  // 走行中の run は polling で進捗を取り直すため、 中間 cache に乗らないよう no-store。
+  // 完了済みは default の cache を許す。
+  if (run.status === 'running' || run.status === 'queued') {
+    c.header('Cache-Control', 'no-store');
+  }
+  return c.json(run);
 });
 
 app.get('/runs/:id/graph', (c) => {
