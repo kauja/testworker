@@ -75,7 +75,10 @@ runner → SQLite + ./data/runs/*    ← api reads
 
 ### Database schema
 
-`packages/runner/src/db/migrate.ts` の `DDL` 定数が**正本**。drizzle ORM は採用していない（raw SQL + better-sqlite3）。マイグレーションは現状追記専用で、ALTER 系を入れる場合はバージョン管理の仕組みを足す必要あり。
+スキーマの**正本は `packages/runner/src/db/migrations/NNN-name.sql` の連番マイグレーション**（raw SQL + better-sqlite3、drizzle ORM は不採用）。`migrate.ts::loadMigrations()` が連番ファイルを読み、`PRAGMA user_version` で適用済み version を追跡して未適用分だけ trx で流す。
+
+- **column / table を増やすときは新規 `NNN-name.sql` を追加する**（既存マイグレーションは編集しない）。`001-init.sql` が初期スキーマ、以降が ALTER 系。
+- version 番号は**ファイル名先頭の連番**。重複すると `loadMigrations()` が `duplicate migration version` で throw し `make migrate` が全面 fail する。並列ブランチで採番が衝突しやすいので注意（運用改善は Issue #237）。
 
 主要テーブル:
 
