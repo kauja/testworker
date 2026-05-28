@@ -32,6 +32,7 @@ import { applyPageStateId, createMonitors } from './monitors.js';
 import { collectWebVitals, installWebVitals } from './web-vitals.js';
 import { loadLoginScript } from '../auth/login.js';
 import { createRobotsCache, isAllowedByRobots } from './robots.js';
+import { loadInjectScript } from './inject.js';
 
 const DEFAULT_ROBOTS_UA = 'testworker';
 
@@ -98,6 +99,15 @@ export async function runCrawl(
     });
     if (options.captureWebVitals) {
       await installWebVitals(context);
+    }
+
+    // Issue #203: カスタム JS 注入フック。 context.addInitScript はコンテキスト全体に
+    // 登録され、 以降生成される全ページ・全ナビゲーションで「ページ評価前」に毎回走る。
+    // login script より前に登録することでログイン画面も含め全評価前に注入される。
+    // 内容はブラウザのページコンテキストで実行 (Node ホストでは実行しない)。
+    if (options.injectScriptPath) {
+      const injectSource = await loadInjectScript(options.injectScriptPath);
+      await context.addInitScript(injectSource);
     }
 
     const monitors = createMonitors();

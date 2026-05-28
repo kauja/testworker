@@ -31,6 +31,14 @@ export const CrawlOptions = z.object({
     .default({ width: 1280, height: 800 }),
   storageStatePath: z.string().optional(),
   loginScriptPath: z.string().optional(),
+  /**
+   * 各ページ評価前に `context.addInitScript` で注入する JS/TS ファイルのパス (Issue #203)。
+   * loginScript と違い動的 import せず、 ファイル内容を文字列として addInitScript に渡す
+   * (=ブラウザのページコンテキストで実行、 Node ホストでは実行しない)。 absent = 注入なし
+   * (storageStatePath / loginScriptPath と同様 optional で後方互換)。
+   * 秘密値 (token / password 等) はクライアントに露出するためここに注入しないこと。
+   */
+  injectScriptPath: z.string().optional(),
   includeUrlPatterns: z.array(z.string()).default([]),
   excludeUrlPatterns: z.array(z.string()).default([]),
   userAgent: z.string().optional(),
