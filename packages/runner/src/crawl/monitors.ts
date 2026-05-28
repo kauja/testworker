@@ -5,6 +5,7 @@ import {
   type NetworkEntry,
   type PageError,
 } from '@testworker/shared';
+import { BLOCKED_BY_CLIENT_ERROR } from './resource-block.js';
 
 export interface PageMonitors {
   console: ConsoleEntry[];
@@ -79,6 +80,9 @@ export function createMonitors(): PageMonitors {
     });
 
     page.on('requestfailed', (req) => {
+      // Issue #202: context.route で意図的に abort したリソース (analytics / ads / font 等) は
+      // ネットワークエラーではないので network buffer に積まない (networkErrorCount を汚さない)。
+      if (req.failure()?.errorText === BLOCKED_BY_CLIENT_ERROR) return;
       const started = requestStart.get(req);
       networkBuf.push({
         id: newEventId(),

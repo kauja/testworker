@@ -5,6 +5,7 @@ import { openDb } from './db/client.js';
 import { migrate } from './db/migrate.js';
 import { loadRunnerEnv, optionsFromEnv } from './config.js';
 import { runCrawl } from './crawl/crawler.js';
+import { BLOCK_PRESETS, expandBlockPresets } from './crawl/resource-block.js';
 
 async function main(): Promise<void> {
   const { values, positionals } = parseArgs({
@@ -23,6 +24,7 @@ async function main(): Promise<void> {
       'no-same-origin': { type: 'boolean', default: false },
       'no-respect-robots': { type: 'boolean', default: false },
       'no-web-vitals': { type: 'boolean', default: false },
+      block: { type: 'string', multiple: true },
     },
     allowPositionals: true,
   });
@@ -57,6 +59,7 @@ async function main(): Promise<void> {
     ...(values['no-same-origin'] ? { sameOriginOnly: false } : {}),
     ...(values['no-respect-robots'] ? { respectRobots: false } : {}),
     ...(values['no-web-vitals'] ? { captureWebVitals: false } : {}),
+    ...blockOverrides(values.block),
   };
 
   const db = openDb(env.dbPath);
@@ -144,4 +147,20 @@ function parseViewport(raw: string): { width: number; height: number } {
 function toStringArray(value: string | string[] | undefined): string[] {
   if (!value) return [];
   return Array.isArray(value) ? value : [value];
+}
+
+// `--block analytics|ads|fonts` (repeatable) を CrawlOptions の 2 配列に展開する。
+// 未知のプリセットは早期に弾いて usage を出す (誤入力の sink を作らない)。
+function blockOverrides(
+  raw: string | string[] | undefined,
+): { blockResourceTypes: string[]; blockUrlPatterns: string[] } | object {
+  const presets = toStringArray(raw);
+  if (presets.length === 0) return {};
+  const allowed: readonly string[] = BLOCK_PRESETS;
+  const unknown = presets.filter((p) => !allowed.includes(p));
+  if (unknown.length > 0) {
+    log.error(`unknown --block preset: ${unknown.join(', ')} (allowed: ${allowed.join(', ')})`);
+    process.exit(1);
+  }
+  return expandBlockPresets(presets);
 }

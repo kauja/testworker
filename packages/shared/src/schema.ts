@@ -35,6 +35,19 @@ export const CrawlOptions = z.object({
   excludeUrlPatterns: z.array(z.string()).default([]),
   userAgent: z.string().optional(),
   captureWebVitals: z.boolean().default(true),
+  /**
+   * クロール中に abort する resourceType の配列 (Issue #202)。 Playwright の
+   * `request.resourceType()` と完全一致でブロック (例: `font` / `image` / `media`)。
+   * default [] = ブロック無し (既存 run と完全後方互換)。
+   */
+  blockResourceTypes: z.array(z.string()).default([]),
+  /**
+   * クロール中に abort する URL の正規表現文字列配列 (Issue #202)。 analytics / ads は
+   * resourceType で括れない (script / xhr / fetch として読み込まれる) ため、 ドメインを
+   * パターンで弾く。 `includeUrlPatterns` と同じく `new RegExp(p).test(url)` で評価。
+   * default [] = ブロック無し。
+   */
+  blockUrlPatterns: z.array(z.string()).default([]),
 });
 export type CrawlOptions = z.infer<typeof CrawlOptions>;
 

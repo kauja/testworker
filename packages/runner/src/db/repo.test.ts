@@ -79,6 +79,8 @@ const run = {
     includeUrlPatterns: [],
     excludeUrlPatterns: [],
     captureWebVitals: true,
+    blockResourceTypes: [],
+    blockUrlPatterns: [],
   },
   errorMessage: null,
   pagesDone: 0,
