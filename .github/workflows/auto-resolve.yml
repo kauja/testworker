@@ -2,7 +2,12 @@ name: auto-resolve
 
 # Autonomous issue resolution pipeline (#31).
 #
-# Every 6 hours (or on manual dispatch):
+# 現状: 本体スクリプト (scripts/auto-resolve-one.sh / scripts/check-pr-safety.sh)
+# は未実装。schedule を停止し、workflow_dispatch のみとした上で、
+# スクリプト不在を明示的に検出してフェイルする。
+# 本実装は別 Issue で進める。
+#
+# 設計（実装時の目標）:
 #   1. Fetch open issues labeled `autonomous-ok`, sorted by priority (p0 → p1 → p2)
 #   2. For each (up to `limit`, default 3):
 #      a. Create a branch, ask `claude -p` to implement the issue
@@ -11,18 +16,11 @@ name: auto-resolve
 #      d. Wait for CI; on failure, hand the logs back to Claude for one fix pass
 #      e. Auto-merge once CI is green
 #      f. Post a summary comment on the issue
-#
-# Safety:
-#   - Denylist files (auth/, payments/, *migration*, .env*, .github/workflows/*)
-#     never get touched. If Claude tries, the PR is converted to draft and tagged
-#     for human review.
-#   - New code without test coverage blocks the PR (PR stays open as draft).
-#   - Per-session tool-use budget (configured in CLAUDE.md context).
-#   - workflow_dispatch supports `dry_run: true` for safe rehearsal.
 
 on:
-  schedule:
-    - cron: '0 */6 * * *' # every 6h UTC
+  # schedule は本体スクリプト実装まで無効化する (#38)
+  # schedule:
+  #   - cron: '0 */6 * * *'
   workflow_dispatch:
     inputs:
       limit:
@@ -69,6 +67,25 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: true
+
+      - name: Sanity — required scripts present
+        run: |
+          # 「ファイル不在」と「実行権限不足」を別メッセージで分け、 reviewer の
+          # 切り分けを容易にする。 implementation gate 自体は presence-only で判断。
+          missing=0
+          for f in scripts/auto-resolve-one.sh scripts/check-pr-safety.sh; do
+            if [ ! -f "$f" ]; then
+              echo "::error::required script missing: $f"
+              missing=1
+            elif [ ! -x "$f" ]; then
+              echo "::error::script exists but is not executable: $f (run: git update-index --chmod=+x $f)"
+              missing=1
+            fi
+          done
+          if [ "$missing" = "1" ]; then
+            echo "::error::auto-resolve pipeline is not implemented yet (see Issue #38)."
+            exit 1
+          fi
 
       - name: Sanity — required secrets present
         run: |
