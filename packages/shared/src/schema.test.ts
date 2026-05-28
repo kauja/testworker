@@ -8,6 +8,7 @@ describe('CrawlOptions', () => {
       maxDepth: 3,
       maxPages: 50,
       sameOriginOnly: true,
+      respectRobots: true,
       navTimeoutMs: 15_000,
       waitAfterNavMs: 500,
       viewport: { width: 1280, height: 800 },
@@ -43,6 +44,7 @@ describe('Run', () => {
         startUrl: 'https://example.com',
         maxDepth: 3,
         maxPages: 50,
+        respectRobots: true,
       },
     });
   });
