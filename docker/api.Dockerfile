@@ -14,17 +14,23 @@ WORKDIR /workspace
 
 # -------- dev (compose で bind mount してホットリロード) --------
 FROM base AS dev
-COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/api/package.json packages/api/
-RUN pnpm install --no-frozen-lockfile
+# lockfile を尊重するが、 dev は workspace 部分編集での再 install を許容するため
+# --prefer-frozen-lockfile に留める (--frozen-lockfile だと bind mount での pnpm
+# install で lockfile drift が起きた瞬間 fail し、 開発体験が悪い)。
+RUN pnpm install --prefer-frozen-lockfile
 EXPOSE 3001
 CMD ["pnpm", "--filter", "@testworker/api", "run", "dev"]
 
 # -------- build --------
 FROM base AS build
 COPY . .
-RUN pnpm install --no-frozen-lockfile
+# build (= CI / production image) は再現性のため --frozen-lockfile を強制。
+# lockfile と package.json に齟齬があると fail し、 transitive 脆弱性 pin と
+# rollback 可能性を確実にする (Issue #100)。
+RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @testworker/api run build
 
 # -------- prod --------
