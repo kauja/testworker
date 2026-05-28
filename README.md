@@ -23,20 +23,31 @@ License: **MIT**
 
 ---
 
-## Quick start
+## Quick start — 30 秒で動く例 (Intent #128)
 
 ```bash
-# 1. 起動（web: http://localhost:3000, api: http://localhost:3001）
-make up
+# 1. clone & 起動 (web: http://localhost:3000 / api: http://localhost:3001)
+git clone https://github.com/kauja/testworker.git && cd testworker && make up
 
-# 2. 別シェルでクロール実行
-make crawl URL=http://host.docker.internal:3000
+# 2. (別シェル) 公開サイトを 1 本クロール — 認証不要・設定不要
+make crawl URL=https://example.com
 
-# 3. ブラウザで開く
+# 3. ブラウザで結果を開く
 open http://localhost:3000
 ```
 
-> macOS / Windows では `host.docker.internal` がホスト側 URL を指します。Linux でも `extra_hosts: host-gateway` を設定済みなので同じ URL でアクセス可能です。
+これで `make up` の docker compose が runner / api / web を起動し、 `make crawl` で 1 ページぶん (`example.com` は 1 ページのみ) のスクリーンショット・コンソール・ネットワークを記録、 ブラウザで遷移図 UI を確認できます。 ここまで通常 **30 秒〜1 分**。
+
+### 自分のアプリで試す
+
+```bash
+# Docker 内から host を見る URL を渡す (macOS / Win)
+make crawl URL=http://host.docker.internal:3000
+
+# Linux でも extra_hosts: host-gateway 設定済みなので同じ URL で OK
+```
+
+認証付きサイト / 大規模 SPA / 失敗時の対処は [`docs/troubleshooting.md`](./docs/troubleshooting.md) に 5 章 (origin / login / timeout / robots / certificate) を集約しています。 framework preset は [`docs/presets/`](./docs/presets/) を参照。
 
 ---
 
