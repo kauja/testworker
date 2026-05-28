@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { ApiError, fetchRuns } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { RetryButton } from '@/components/retry-button';
+import { TimeStamp } from '@/components/time-stamp';
 
 interface PageError {
   kind: 'unreachable' | 'db_not_ready' | 'http';
@@ -64,7 +65,7 @@ export default async function HomePage() {
               <div className="min-w-0">
                 <div className="truncate font-medium text-ink">{r.run.startUrl}</div>
                 <div className="mt-1 text-xs text-ink-faint">
-                  {r.run.id} · {new Date(r.run.startedAt).toLocaleString()}
+                  {r.run.id} · <TimeStamp value={r.run.startedAt} mode="relative" />
                 </div>
               </div>
               <StatusPill status={r.run.status} />
