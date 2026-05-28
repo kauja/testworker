@@ -27,11 +27,16 @@ if (!path) process.exit(0);
 const abs = resolve(path);
 const lower = abs.toLowerCase();
 
-// 文字列 fragment マッチで block するパス。 source path に同名が出ない token のみ。
-// `auth` だけは packages/runner/src/auth/ など source path に重複するので、 別途
-// repo-root 直下限定の判定を下で行う。
+// ハーネス自己改変防止 + sandbox 防御。 文字列 fragment match で block するパス。
+// source path に同名が出ない token に限る。 `auth` だけは packages/runner/src/auth/ など
+// source path に重複するので、 BANNED_DIR_FRAGMENTS から除外し、 別途 repo-root 直下
+// 限定の判定を下で行う (#73)。 .claude / .github/workflows / scripts は source path
+// に重複しないため fragment match で OK (#63)。
 const BANNED_DIR_FRAGMENTS = [
   `${sep}.git${sep}`,
+  `${sep}.github${sep}workflows${sep}`,
+  `${sep}.claude${sep}`,
+  `${sep}scripts${sep}`,
   `${sep}test-target${sep}`,
   `${sep}test-targets${sep}`,
   `${sep}fixtures-private${sep}`,
