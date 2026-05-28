@@ -19,6 +19,7 @@ import {
   insertErrorBatch,
   insertNetworkBatch,
   insertRun,
+  updateRunProgress,
   updateRunStatus,
   upsertPageState,
 } from '../db/repo.js';
@@ -63,6 +64,9 @@ export async function runCrawl(
     finishedAt: null,
     options,
     errorMessage: null,
+    pagesDone: 0,
+    queueSize: 1,
+    currentUrl: options.startUrl,
   };
   insertRun(db, run);
   await mkdir(join(dataDir, 'runs', runId, 'screenshots'), { recursive: true });
@@ -120,6 +124,10 @@ export async function runCrawl(
 
     while (frontier.length > 0 && pageCount < options.maxPages) {
       const task = frontier.shift()!;
+      // Issue #86: 走行中の進捗を runs テーブルに書き戻して Web UI から見える状態にする。
+      // BFS ループ先頭で 1 ページごとに UPDATE 1 本だけ。 task が同 origin / robots /
+      // include-exclude で弾かれても currentUrl は「次に試行している URL」として正しい。
+      updateRunProgress(db, runId, pageCount, frontier.length + 1, task.url);
       if (task.depth > options.maxDepth) continue;
       if (options.sameOriginOnly) {
         try {
@@ -280,14 +288,25 @@ export async function runCrawl(
       }
     }
 
+    // 完了時に最終 progress を確定。 currentUrl は null (now idle)。
+    updateRunProgress(db, runId, pageCount, 0, null);
     updateRunStatus(db, runId, 'completed', new Date().toISOString(), null);
     return {
-      run: { ...run, status: 'completed', finishedAt: new Date().toISOString() },
+      run: {
+        ...run,
+        status: 'completed',
+        finishedAt: new Date().toISOString(),
+        pagesDone: pageCount,
+        queueSize: 0,
+        currentUrl: null,
+      },
       pages: pageCount,
       edges: edgeCount,
     };
   } catch (err) {
     const message = (err as Error).message;
+    // failed 時も進捗の最終値を残しておくと UI で「N/M で失敗」が見える。
+    updateRunProgress(db, runId, pageCount, 0, null);
     updateRunStatus(db, runId, 'failed', new Date().toISOString(), message);
     throw err;
   } finally {

@@ -5,6 +5,7 @@ import { NewRunForm } from '@/components/new-run-form';
 import { RetryButton } from '@/components/retry-button';
 import { RunsAutoRefresh } from '@/components/runs-auto-refresh';
 import { TimeStamp } from '@/components/time-stamp';
+import { RunProgress } from '@/components/run-progress';
 
 interface PageError {
   kind: 'unreachable' | 'db_not_ready' | 'http';
@@ -72,6 +73,11 @@ export default async function HomePage() {
                     tone={r.errorCount > 0 ? 'bad' : undefined}
                   />
                 </div>
+                {(r.run.status === 'running' || r.run.status === 'queued') && (
+                  <div className="mt-3">
+                    <RunProgress run={r.run} compact />
+                  </div>
+                )}
               </Link>
             ))}
           </div>

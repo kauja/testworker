@@ -2,6 +2,7 @@ import type {
   ErrorGroup,
   GraphPayload,
   PageDetail,
+  Run,
   RunDiff,
   RunLaunchInput,
   RunLaunchResponse,
@@ -103,6 +104,7 @@ export const apiBase = base;
 export const fetchRuns = (init?: RequestInit) => get<RunSummary[]>('/runs', init);
 export const launchRun = (input: RunLaunchInput, init?: RequestInit) =>
   post<RunLaunchResponse>('/runs', input, init);
+export const fetchRun = (runId: string, init?: RequestInit) => get<Run>(`/runs/${runId}`, init);
 export const fetchGraph = (runId: string, init?: RequestInit) =>
   get<GraphPayload>(`/runs/${runId}/graph`, init);
 export const fetchPage = (pageId: string, init?: RequestInit) =>
