@@ -23,6 +23,9 @@ async function main(): Promise<void> {
       'no-same-origin': { type: 'boolean', default: false },
       'no-respect-robots': { type: 'boolean', default: false },
       'no-web-vitals': { type: 'boolean', default: false },
+      'auto-scroll': { type: 'boolean', default: false },
+      'auto-scroll-max-steps': { type: 'string' },
+      'auto-scroll-delay-ms': { type: 'string' },
     },
     allowPositionals: true,
   });
@@ -57,6 +60,13 @@ async function main(): Promise<void> {
     ...(values['no-same-origin'] ? { sameOriginOnly: false } : {}),
     ...(values['no-respect-robots'] ? { respectRobots: false } : {}),
     ...(values['no-web-vitals'] ? { captureWebVitals: false } : {}),
+    ...(values['auto-scroll'] ? { autoScroll: true } : {}),
+    ...(values['auto-scroll-max-steps']
+      ? { autoScrollMaxSteps: Number(values['auto-scroll-max-steps']) }
+      : {}),
+    ...(values['auto-scroll-delay-ms']
+      ? { autoScrollDelayMs: Number(values['auto-scroll-delay-ms']) }
+      : {}),
   };
 
   const db = openDb(env.dbPath);

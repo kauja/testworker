@@ -35,6 +35,17 @@ export const CrawlOptions = z.object({
   excludeUrlPatterns: z.array(z.string()).default([]),
   userAgent: z.string().optional(),
   captureWebVitals: z.boolean().default(true),
+  /**
+   * 各ページ訪問後に段階的に scrollBy して infinite scroll / lazy load を発火させるか (Issue #199)。
+   * default false (既存 run の挙動を変えない / 後方互換)。 true にすると signature 計算前に
+   * autoScrollMaxSteps 回まで下方向スクロールし、 毎ステップ autoScrollDelayMs 待つ。
+   * ページ最下部に到達するか、 スクロール高さが伸びなくなったら早期終了する。
+   */
+  autoScroll: z.boolean().default(false),
+  /** autoScroll 有効時の最大スクロールステップ数。 default 10 (上限 100)。 */
+  autoScrollMaxSteps: z.number().int().min(1).max(100).default(10),
+  /** autoScroll の各ステップ後の待機 (lazy load の発火待ち)。 default 400ms (上限 10s)。 */
+  autoScrollDelayMs: z.number().int().min(0).max(10_000).default(400),
 });
 export type CrawlOptions = z.infer<typeof CrawlOptions>;
 

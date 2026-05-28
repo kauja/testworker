@@ -32,6 +32,7 @@ import { applyPageStateId, createMonitors } from './monitors.js';
 import { collectWebVitals, installWebVitals } from './web-vitals.js';
 import { loadLoginScript } from '../auth/login.js';
 import { createRobotsCache, isAllowedByRobots } from './robots.js';
+import { autoScroll } from './auto-scroll.js';
 
 const DEFAULT_ROBOTS_UA = 'testworker';
 
@@ -198,6 +199,13 @@ export async function runCrawl(
       }
       if (options.waitAfterNavMs > 0) {
         await page.waitForTimeout(options.waitAfterNavMs);
+      }
+      // infinite scroll / lazy load を発火させてから signature / screenshot を取る (Issue #199)。
+      if (options.autoScroll) {
+        await autoScroll(page, {
+          maxSteps: options.autoScrollMaxSteps,
+          delayMs: options.autoScrollDelayMs,
+        });
       }
 
       const sig = await computeSignature(page);
