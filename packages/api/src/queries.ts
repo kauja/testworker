@@ -51,7 +51,7 @@ interface EdgeRow {
 
 // 各 field を個別に safeParse し、 valid なものだけ拾う。 1 field が invalid なときに
 // 他の有効な field まで defaults に倒すのを防ぐ (Issue #66)。
-function pickValidOptionFields(raw: Record<string, unknown>): Record<string, unknown> {
+export function pickValidOptionFields(raw: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, fieldSchema] of Object.entries(CrawlOptions.shape)) {
     if (!(key in raw)) continue;
@@ -61,7 +61,7 @@ function pickValidOptionFields(raw: Record<string, unknown>): Record<string, unk
   return out;
 }
 
-function rowToRun(row: RunRow): Run {
+export function rowToRun(row: RunRow): Run {
   // disk corruption / 部分書き込み等で options_json が壊れていても /runs は落とさない。
   let raw: unknown = {};
   try {

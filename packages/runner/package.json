@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "crawl": "tsx src/cli.ts",
     "db:migrate": "tsx src/db/migrate.ts"
