@@ -75,6 +75,20 @@ invoke_claude() {
   claude -p --output-format text < "$1"
 }
 
+git_push_with_token() {
+  # actions/checkout uses persist-credentials:false, so keep credentials out of
+  # .git/config and inject the token only for this git process.
+  if [ -z "${GH_TOKEN:-}" ]; then
+    log "GH_TOKEN is required for git push"
+    return 1
+  fi
+  GIT_TERMINAL_PROMPT=0 \
+    GIT_CONFIG_COUNT=1 \
+    GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+    GIT_CONFIG_VALUE_0="AUTHORIZATION: bearer ${GH_TOKEN}" \
+    git push "$@"
+}
+
 await_ci() {
   local pr="$1"
   local deadline=$((SECONDS + CI_TIMEOUT_SECONDS))
@@ -175,7 +189,7 @@ if [ -z "$(git status --porcelain)" ] && [ "$(git rev-list --count origin/main..
 fi
 
 log "pushing branch ${BRANCH}"
-git push -u origin "$BRANCH"
+git_push_with_token -u origin "$BRANCH"
 
 log "opening PR"
 PR_URL=$(gh pr create --repo "$REPO" \
@@ -210,7 +224,7 @@ if [ "$RESULT" = "failed" ] && [ "$MAX_FIX_PASSES" -ge 1 ]; then
   if [ -n "$(git status --porcelain)" ]; then
     git add -- $(git status --porcelain | awk '{print $2}')
     git commit -m "fix: address CI failure on PR #${PR_NUM} (auto-resolve)"
-    git push origin "$BRANCH"
+    git_push_with_token origin "$BRANCH"
     RESULT=$(await_ci "$PR_NUM")
     log "ci result after fix: ${RESULT}"
   else
