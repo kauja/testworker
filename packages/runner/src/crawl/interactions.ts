@@ -82,6 +82,9 @@ const COLLECT_SCRIPT = `() => {
 }`;
 
 export async function collectInteractions(page: Page): Promise<Interaction[]> {
-  const raw = (await page.evaluate(COLLECT_SCRIPT)) as Interaction[];
+  // page.evaluate(string) は expression 評価しか行わないため、関数文字列を渡しても
+  // 関数オブジェクトが返るだけで invoke されない。 IIFE で wrap する。
+  // signature.ts と同じ問題を共有しているので、追加箇所が出たら helper に切り出す。
+  const raw = (await page.evaluate(`(${COLLECT_SCRIPT})()`)) as Interaction[];
   return raw;
 }
