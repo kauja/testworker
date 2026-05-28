@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import type { ConsoleEntry, NetworkEntry, PageDetail } from '@testworker/shared';
+import type { ConsoleEntry, Edge, NetworkEntry, PageDetail } from '@testworker/shared';
 import { assetUrl, fetchPage } from '@/lib/api';
 import { cn } from '@/lib/cn';
 
-type Tab = 'overview' | 'console' | 'network' | 'errors';
+type Tab = 'overview' | 'console' | 'network' | 'errors' | 'routes';
 type ConsoleLevel = 'log' | 'info' | 'warn' | 'error' | 'debug';
 type NetStatusBucket = '2xx' | '3xx' | '4xx' | '5xx' | 'failed';
 
@@ -19,7 +19,14 @@ const NET_STATUS_BUCKETS: readonly NetStatusBucket[] = [
   'failed',
 ] as const;
 
-export function PageDetailPanel({ pageId }: { pageId: string | null }) {
+export function PageDetailPanel({
+  pageId,
+  onSelectPage,
+}: {
+  pageId: string | null;
+  /** routes タブで edge クリック時に呼ぶ。 graph 側で同じ node を選択し、 React Flow を再フォーカスする想定。 */
+  onSelectPage?: (id: string) => void;
+}) {
   const [detail, setDetail] = useState<PageDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<Tab>('overview');
@@ -99,7 +106,7 @@ export function PageDetailPanel({ pageId }: { pageId: string | null }) {
         onKeyDown={(e) => {
           // 左右矢印 / Home / End で tab を移動する (Issue #106 / a11y)。
           // 矢印キーは roving tabindex 的に focus も次タブに移す。
-          const tabs: Tab[] = ['overview', 'console', 'network', 'errors'];
+          const tabs: Tab[] = ['overview', 'routes', 'console', 'network', 'errors'];
           const idx = tabs.indexOf(tab);
           let nextIdx: number | null = null;
           if (e.key === 'ArrowRight') nextIdx = (idx + 1) % tabs.length;
@@ -111,32 +118,44 @@ export function PageDetailPanel({ pageId }: { pageId: string | null }) {
           const next = tabs[nextIdx];
           if (!next) return;
           setTab(next);
-          // 次の tab button を focus に移す
           const el = e.currentTarget.querySelector<HTMLButtonElement>(`[data-tab="${next}"]`);
           el?.focus();
         }}
         className="flex gap-1 border-b border-line px-2 pt-2 text-xs"
       >
-        {(['overview', 'console', 'network', 'errors'] as Tab[]).map((t) => (
-          <button
-            key={t}
-            role="tab"
-            data-tab={t}
-            id={`tab-${t}`}
-            aria-controls={`tabpanel-${t}`}
-            aria-selected={tab === t}
-            tabIndex={tab === t ? 0 : -1}
-            onClick={() => setTab(t)}
-            className={cn(
-              'rounded-t px-3 py-1.5 capitalize transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent',
-              tab === t
-                ? 'bg-bg-panel text-ink'
-                : 'text-ink-muted hover:bg-bg-panel/60 hover:text-ink',
-            )}
-          >
-            {t}
-          </button>
-        ))}
+        {(['overview', 'routes', 'console', 'network', 'errors'] as Tab[]).map((t) => {
+          const count =
+            t === 'routes'
+              ? detail.incoming.length + detail.outgoing.length
+              : t === 'console'
+                ? detail.console.length
+                : t === 'network'
+                  ? detail.network.length
+                  : t === 'errors'
+                    ? detail.errors.length
+                    : null;
+          return (
+            <button
+              key={t}
+              role="tab"
+              data-tab={t}
+              id={`tab-${t}`}
+              aria-controls={`tabpanel-${t}`}
+              aria-selected={tab === t}
+              tabIndex={tab === t ? 0 : -1}
+              onClick={() => setTab(t)}
+              className={cn(
+                'rounded-t px-3 py-1.5 capitalize transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent',
+                tab === t
+                  ? 'bg-bg-panel text-ink'
+                  : 'text-ink-muted hover:bg-bg-panel/60 hover:text-ink',
+              )}
+            >
+              {t}
+              {count != null && count > 0 && <span className="ml-1 text-ink-faint">({count})</span>}
+            </button>
+          );
+        })}
       </div>
 
       <div className="flex-1 overflow-auto">
@@ -158,6 +177,20 @@ export function PageDetailPanel({ pageId }: { pageId: string | null }) {
               <div className="text-xs text-ink-muted">no screenshot</div>
             )}
           </div>
+        </div>
+        <div
+          role="tabpanel"
+          id="tabpanel-routes"
+          aria-labelledby="tab-routes"
+          hidden={tab !== 'routes'}
+        >
+          {tab === 'routes' && (
+            <RoutesTab
+              incoming={detail.incoming}
+              outgoing={detail.outgoing}
+              onSelectPage={onSelectPage}
+            />
+          )}
         </div>
         <div
           role="tabpanel"
@@ -201,6 +234,98 @@ export function PageDetailPanel({ pageId }: { pageId: string | null }) {
         </div>
       </div>
     </aside>
+  );
+}
+
+function RoutesTab({
+  incoming,
+  outgoing,
+  onSelectPage,
+}: {
+  incoming: Edge[];
+  outgoing: Edge[];
+  onSelectPage?: (id: string) => void;
+}) {
+  return (
+    <div className="divide-y divide-line text-xs">
+      <EdgeSection
+        title="Incoming"
+        emptyLabel="到達経路なし (start ノード or 孤立)"
+        edges={incoming}
+        targetField="from"
+        onSelectPage={onSelectPage}
+      />
+      <EdgeSection
+        title="Outgoing"
+        emptyLabel="このページからの遷移なし"
+        edges={outgoing}
+        targetField="to"
+        onSelectPage={onSelectPage}
+      />
+    </div>
+  );
+}
+
+function EdgeSection({
+  title,
+  emptyLabel,
+  edges,
+  targetField,
+  onSelectPage,
+}: {
+  title: string;
+  emptyLabel: string;
+  edges: Edge[];
+  /** クリック時にナビゲートする先 ('from' incoming / 'to' outgoing)。 */
+  targetField: 'from' | 'to';
+  onSelectPage?: (id: string) => void;
+}) {
+  return (
+    <section className="px-3 py-2">
+      <h3 className="mb-1 text-[10px] uppercase tracking-wider text-ink-faint">
+        {title} ({edges.length})
+      </h3>
+      {edges.length === 0 ? (
+        <p className="px-1 py-1 text-ink-muted">{emptyLabel}</p>
+      ) : (
+        <ul className="divide-y divide-line">
+          {edges.map((e) => {
+            const targetId = targetField === 'from' ? e.fromPageStateId : e.toPageStateId;
+            return (
+              <li key={e.id}>
+                <button
+                  onClick={() => onSelectPage?.(targetId)}
+                  disabled={!onSelectPage}
+                  className={cn(
+                    'group block w-full px-1 py-1.5 text-left transition-colors',
+                    onSelectPage ? 'hover:bg-bg-panel/60' : 'cursor-default',
+                  )}
+                >
+                  <div className="flex items-center gap-2 text-[11px] text-ink-faint">
+                    <span className="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-accent">
+                      {e.trigger}
+                    </span>
+                    {e.triggerText && (
+                      <span className="truncate font-mono text-ink-muted">
+                        “{e.triggerText.slice(0, 60)}”
+                      </span>
+                    )}
+                  </div>
+                  {e.triggerSelector && (
+                    <div className="mt-0.5 truncate font-mono text-[11px] text-ink-faint">
+                      {e.triggerSelector}
+                    </div>
+                  )}
+                  <div className="mt-0.5 truncate text-[11px] text-ink group-hover:text-accent">
+                    → {targetId}
+                  </div>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
 
