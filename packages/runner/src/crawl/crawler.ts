@@ -31,6 +31,7 @@ import { collectInteractions, type Interaction } from './interactions.js';
 import { applyPageStateId, createMonitors } from './monitors.js';
 import { collectWebVitals, installWebVitals } from './web-vitals.js';
 import { applyCacheMode } from './cache.js';
+import { applyThrottling } from './throttle.js';
 import { loadLoginScript } from '../auth/login.js';
 import { createRobotsCache, isAllowedByRobots } from './robots.js';
 import { autoScroll } from './auto-scroll.js';
@@ -136,6 +137,13 @@ export async function runCrawl(
         'applyCacheMode failed',
       );
     }
+    // Issue #197: Network / CPU throttling を CDP 経由で適用。 throttling 不要なら
+    // (networkThrottle:'none' かつ cpuThrottle:1) 何もしない。 login script より前に
+    // 適用して、 認証フローも絞られた条件下で走らせる。
+    await applyThrottling(page, {
+      networkThrottle: options.networkThrottle,
+      cpuThrottle: options.cpuThrottle,
+    });
 
     if (options.loginScriptPath) {
       const login = await loadLoginScript(options.loginScriptPath);

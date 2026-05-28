@@ -86,6 +86,8 @@ const run = {
     blockResourceTypes: [],
     blockUrlPatterns: [],
     cacheMode: 'warm' as const,
+    networkThrottle: 'none' as const,
+    cpuThrottle: 1,
   },
   errorMessage: null,
   pagesDone: 0,
