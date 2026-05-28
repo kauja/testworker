@@ -92,7 +92,13 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
           {errorTotal > 0 && (
             <>
               <span className="text-ink-faint">·</span>
-              <span className="text-bad">{errorTotal} errors</span>
+              <a
+                href={`/runs/${graph.run.id}/errors`}
+                className="text-bad hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-bad"
+                title="エラーグループ表示 (Issue #88)"
+              >
+                {errorTotal} errors →
+              </a>
             </>
           )}
           <span className="text-ink-faint">·</span>

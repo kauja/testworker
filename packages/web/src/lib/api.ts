@@ -1,4 +1,4 @@
-import type { GraphPayload, PageDetail, RunDiff, RunSummary } from '@testworker/shared';
+import type { ErrorGroup, GraphPayload, PageDetail, RunDiff, RunSummary } from '@testworker/shared';
 
 const SERVER_BASE = process.env.API_BASE_URL ?? 'http://api:3001';
 const CLIENT_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001';
@@ -18,6 +18,8 @@ export const fetchGraph = (runId: string, init?: RequestInit) =>
   get<GraphPayload>(`/runs/${runId}/graph`, init);
 export const fetchPage = (pageId: string, init?: RequestInit) =>
   get<PageDetail>(`/pages/${pageId}`, init);
+export const fetchErrorGroups = (runId: string, init?: RequestInit) =>
+  get<ErrorGroup[]>(`/runs/${runId}/errors/grouped`, init);
 export const fetchRunDiff = (
   runId: string,
   base: string | 'previous' = 'previous',

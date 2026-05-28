@@ -143,6 +143,29 @@ export const PageDetail = z.object({
 export type PageDetail = z.infer<typeof PageDetail>;
 
 /**
+ * 同 run 内で同じスタックトレース / メッセージのエラーを横串集約した単位 (Issue #88)。
+ * count は「踏んだページ件数」 (= 集約された pageError 行数)。
+ */
+export const ErrorGroup = z.object({
+  /** message + normalized stack の hash。 同一 group の安定 ID として使う。 */
+  fingerprint: z.string(),
+  kind: z.enum(['pageerror', 'unhandledrejection', 'crash']),
+  message: z.string(),
+  /** group 内代表 stack (= 最初に出現したもの)。 normalize 前。 */
+  stack: z.string().nullable(),
+  count: z.number().int().min(1),
+  /** このグループのエラーを踏んだページ群 (最大 10 件)。 */
+  samplePages: z.array(
+    z.object({
+      pageStateId: z.string(),
+      url: z.string(),
+      title: z.string(),
+    }),
+  ),
+});
+export type ErrorGroup = z.infer<typeof ErrorGroup>;
+
+/**
  * 2 つの run の diff (Issue #85 / Intent #125)。
  *
  * page の identity は signature (URL + DOM 構造ハッシュ) を使う。 同じ signature が
