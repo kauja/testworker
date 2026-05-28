@@ -12,6 +12,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { GraphPayload, PageState } from '@testworker/shared';
+import { cn } from '@/lib/cn';
 import { PageNode } from './page-node';
 import { PageDetailPanel } from './page-detail-panel';
 
@@ -80,10 +81,48 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
     0,
   );
 
+  const isFailed = graph.run.status === 'failed' || graph.run.status === 'canceled';
+
   return (
     <div className="relative grid h-full grid-cols-[1fr_360px]">
       <div className="relative">
-        <div className="absolute left-4 top-4 z-10 flex items-center gap-3 rounded-md border border-line bg-bg-panel/80 px-3 py-2 text-xs backdrop-blur">
+        {isFailed && (
+          <div
+            role="alert"
+            className="absolute inset-x-0 top-0 z-20 border-b border-bad/40 bg-bad/10 px-6 py-3 text-xs text-bad"
+          >
+            <div className="font-medium uppercase tracking-wider">
+              この run は {graph.run.status} 状態で終了しました
+            </div>
+            {graph.run.errorMessage ? (
+              <pre className="mt-1.5 max-h-32 overflow-auto whitespace-pre-wrap font-mono text-[11px]">
+                {graph.run.errorMessage}
+              </pre>
+            ) : (
+              <div className="mt-1.5 text-ink-muted">
+                error message が記録されていません。 runner のログ (<code>make logs</code>)
+                を確認してください。
+              </div>
+            )}
+            <div className="mt-1.5 text-[10px] text-ink-muted">
+              関連:{' '}
+              <a
+                href="https://github.com/kauja/testworker/blob/main/docs/troubleshooting.md"
+                className="underline hover:text-accent"
+                target="_blank"
+                rel="noreferrer"
+              >
+                docs/troubleshooting.md
+              </a>
+            </div>
+          </div>
+        )}
+        <div
+          className={cn(
+            'absolute left-4 z-10 flex items-center gap-3 rounded-md border border-line bg-bg-panel/80 px-3 py-2 text-xs backdrop-blur',
+            isFailed ? 'top-24' : 'top-4',
+          )}
+        >
           <span className="truncate text-ink-muted">{graph.run.startUrl}</span>
           <span className="text-ink-faint">·</span>
           <span className="text-ink">{graph.pages.length} pages</span>
