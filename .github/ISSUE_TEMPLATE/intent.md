@@ -41,9 +41,7 @@ labels: ['type:intent', 'stage:draft']
 ## 関連 / 参考
 
 -
--
-
----
+- ***
 
 <!--
 Lifecycle:

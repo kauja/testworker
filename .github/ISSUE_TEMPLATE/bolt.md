@@ -42,9 +42,7 @@ PR が merge される時点で満たされるべき観測可能な条件:
 
 - Parent Intent: #
 - 既存 PR / Issue:
--
-
----
+- ***
 
 <!--
 Lifecycle:

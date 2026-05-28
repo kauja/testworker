@@ -80,11 +80,11 @@ Intent (PdM Outcome / 4-8 週)
 
 ### 役割
 
-| 種類       | ラベル                       | 粒度               | 閉じ方                                            |
-| ---------- | ---------------------------- | ------------------ | ------------------------------------------------- |
-| **Intent** | `type:intent` + `stage:*`    | 4-8 週 / outcome   | Success Metrics が満たされて手動 close            |
-| **Bolt**   | `type:bolt` + `stage:*`      | 1-2 週 / 1 PR 規模 | `Closes #N` で PR merge により自動 close          |
-| bug / feat | `bug` / `enhancement` + Area | 任意               | 通常 PR → merge                                   |
+| 種類       | ラベル                       | 粒度               | 閉じ方                                   |
+| ---------- | ---------------------------- | ------------------ | ---------------------------------------- |
+| **Intent** | `type:intent` + `stage:*`    | 4-8 週 / outcome   | Success Metrics が満たされて手動 close   |
+| **Bolt**   | `type:bolt` + `stage:*`      | 1-2 週 / 1 PR 規模 | `Closes #N` で PR merge により自動 close |
+| bug / feat | `bug` / `enhancement` + Area | 任意               | 通常 PR → merge                          |
 
 Intent は **必ず 1 つ以上の Bolt を持つ**。Bolt は **必ず 1 つの Parent Intent を持つ**。bug / feat は Intent 外で動いてよい（小さい改善 / 緊急対応）が、戦略的な追加は Bolt 化して Intent にぶら下げる。
 
