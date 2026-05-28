@@ -195,6 +195,12 @@ const RULES = [
     re: /\bgit\s+push\s+(?:[^|;&]*\s+)?(?:-f|--force|--force-with-lease)\b/,
     why: 'force push は禁止。',
   },
+  {
+    // `git -c remote.<name>.push=<src>:refs/heads/main push origin` で refspec を上書きする
+    // bypass を塞ぐ。 4R で塞いだ `-c <branch>.merge=...main` の姉妹経路。
+    re: /\bgit\s+(?:[^|;&]*\s+)?-c\s+remote\.[^\s=]+\.push\s*=\s*[^|;&\s]*:refs\/heads\/main\b/,
+    why: '-c remote.X.push=...:refs/heads/main は main への refspec override。禁止。',
+  },
 
   // ---- リポジトリの破壊的操作 ----
   {
@@ -202,8 +208,10 @@ const RULES = [
     why: 'リポジトリ自体への破壊的変更は必ず人手で行う。',
   },
   {
-    re: /\bgh\s+api\b[^|;&]*--method\s+DELETE\b/,
-    why: 'gh api DELETE はリソース削除。人手で行うこと。',
+    // `gh api ... --method DELETE` および短縮形 `-X DELETE` の両方を、 大文字小文字無視でブロック。
+    // settings.json の deny は literal な大文字 DELETE 想定なので、 `-x delete` 等が抜けていた。
+    re: /\bgh\s+api\b[^|;&]*(?:--method\s+|-X\s+)(?:DELETE|delete)\b/i,
+    why: 'gh api DELETE / -X DELETE はリソース削除。人手で行うこと。',
   },
   {
     re: /\bgh\s+api\b[^|;&]*branches\/[^\/]+\/protection\b[^|;&]*--method\s+(DELETE|PUT)/,
