@@ -33,6 +33,7 @@ import { collectWebVitals, installWebVitals } from './web-vitals.js';
 import { loadLoginScript } from '../auth/login.js';
 import { createRobotsCache, isAllowedByRobots } from './robots.js';
 import { autoScroll } from './auto-scroll.js';
+import { hasResourceBlocking, installResourceBlocking } from './resource-block.js';
 
 const DEFAULT_ROBOTS_UA = 'testworker';
 
@@ -99,6 +100,11 @@ export async function runCrawl(
     });
     if (options.captureWebVitals) {
       await installWebVitals(context);
+    }
+    // Issue #202: analytics / ads / font 等の不要リソースを abort する。
+    // 何もブロックしない既定 run では route を登録しない (interception 無し = 完全後方互換)。
+    if (hasResourceBlocking(options)) {
+      await installResourceBlocking(context, options);
     }
 
     const monitors = createMonitors();

@@ -83,6 +83,8 @@ const run = {
     autoScroll: false,
     autoScrollMaxSteps: 10,
     autoScrollDelayMs: 400,
+    blockResourceTypes: [],
+    blockUrlPatterns: [],
   },
   errorMessage: null,
   pagesDone: 0,
