@@ -1,14 +1,25 @@
 import Link from 'next/link';
-import { fetchRuns } from '@/lib/api';
+import { ApiError, fetchRuns } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { RetryButton } from '@/components/retry-button';
+
+interface PageError {
+  kind: 'unreachable' | 'db_not_ready' | 'http';
+  message: string;
+  hint?: string;
+}
 
 export default async function HomePage() {
   let runs: Awaited<ReturnType<typeof fetchRuns>> = [];
-  let error: string | null = null;
+  let error: PageError | null = null;
   try {
     runs = await fetchRuns();
   } catch (e) {
-    error = (e as Error).message;
+    if (e instanceof ApiError) {
+      error = { kind: e.kind, message: e.message, hint: e.hint };
+    } else {
+      error = { kind: 'http', message: e instanceof Error ? e.message : String(e) };
+    }
   }
 
   return (
@@ -34,11 +45,7 @@ export default async function HomePage() {
         </div>
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-bad/40 bg-bad/10 px-4 py-3 text-sm text-bad">
-          API に接続できません: {error}
-        </div>
-      )}
+      {error && <ApiErrorBanner error={error} />}
 
       {!error && runs.length === 0 && (
         <div className="rounded-lg border border-dashed border-line bg-bg-subtle px-6 py-12 text-center text-sm text-ink-muted">
@@ -74,6 +81,37 @@ export default async function HomePage() {
           </Link>
         ))}
       </div>
+    </div>
+  );
+}
+
+function ApiErrorBanner({ error }: { error: PageError }) {
+  const title =
+    error.kind === 'db_not_ready'
+      ? 'データベース未初期化'
+      : error.kind === 'unreachable'
+        ? 'API server に到達できません'
+        : 'API エラー';
+  const defaultHint =
+    error.kind === 'db_not_ready'
+      ? '`make migrate` (または `pnpm --filter @testworker/runner run db:migrate`) を実行してから「再試行」してください。'
+      : error.kind === 'unreachable'
+        ? '`make up` で api コンテナが起動しているか、 ポート 3001 が listen 状態か確認してください。'
+        : null;
+  const hint = error.hint ?? defaultHint;
+  return (
+    <div className="space-y-2 rounded-lg border border-bad/40 bg-bad/10 px-4 py-3 text-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div className="font-medium text-bad">{title}</div>
+        <RetryButton />
+      </div>
+      {hint && <div className="text-xs text-ink-muted">{hint}</div>}
+      <details className="text-xs text-ink-faint">
+        <summary className="cursor-pointer hover:text-ink-muted">技術詳細</summary>
+        <pre className="mt-1 whitespace-pre-wrap break-all font-mono text-[11px]">
+          {error.message}
+        </pre>
+      </details>
     </div>
   );
 }
