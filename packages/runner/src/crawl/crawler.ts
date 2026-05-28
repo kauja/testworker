@@ -90,6 +90,12 @@ export async function runCrawl(
 
     const startOrigin = new URL(options.startUrl).origin;
     const visitedSignatures = new Set<string>();
+    // frontier に投げる URL は post-goto で resolve した値で dedup する。
+    // 旧実装は signature ベース dedup のみで、 SPA の共通 header/footer 由来の
+    // 同一リンクがページ毎に何度も frontier に積まれ、 O(N×M) 回 goto / monitor /
+    // screenshot が走って時間と DB エントリが膨張していた (Issue #94)。
+    const frontierUrls = new Set<string>();
+    frontierUrls.add(options.startUrl);
     const frontier: Frontier[] = [
       {
         fromPageStateId: null,
@@ -122,6 +128,22 @@ export async function runCrawl(
         // 次の成功ページの snapshot に紛れ込むのを防ぐため、 buffer を破棄。
         monitors.rotate();
         continue;
+      }
+      // post-goto の same-origin check (Issue #93)。 pre-goto は task.url で
+      // 弾くが、 30x で外部 origin に redirect された場合は page.url() が startOrigin
+      // と一致しない。 sameOriginOnly が有効なら破棄して continue。
+      if (options.sameOriginOnly) {
+        let landedOrigin: string | null = null;
+        try {
+          landedOrigin = new URL(page.url()).origin;
+        } catch {
+          landedOrigin = null;
+        }
+        if (landedOrigin !== startOrigin) {
+          console.warn(`[testworker] cross-origin redirect skipped: ${task.url} → ${page.url()}`);
+          monitors.rotate();
+          continue;
+        }
       }
       if (options.waitAfterNavMs > 0) {
         await page.waitForTimeout(options.waitAfterNavMs);
@@ -212,6 +234,8 @@ export async function runCrawl(
       for (const it of interactions) {
         const nextUrl = resolveNextUrl(page.url(), it);
         if (!nextUrl) continue;
+        if (frontierUrls.has(nextUrl)) continue;
+        frontierUrls.add(nextUrl);
         frontier.push({
           fromPageStateId: pageStateId,
           fromUrl: page.url(),
