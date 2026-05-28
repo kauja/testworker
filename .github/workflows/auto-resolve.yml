@@ -92,25 +92,6 @@ jobs:
             exit 1
           fi
 
-      - name: Sanity — required scripts present
-        run: |
-          # 「ファイル不在」と「実行権限不足」を別メッセージで分け、 reviewer の
-          # 切り分けを容易にする。 implementation gate 自体は presence-only で判断。
-          missing=0
-          for f in scripts/auto-resolve-one.sh scripts/check-pr-safety.sh; do
-            if [ ! -f "$f" ]; then
-              echo "::error::required script missing: $f"
-              missing=1
-            elif [ ! -x "$f" ]; then
-              echo "::error::script exists but is not executable: $f (run: git update-index --chmod=+x $f)"
-              missing=1
-            fi
-          done
-          if [ "$missing" = "1" ]; then
-            echo "::error::auto-resolve pipeline is not implemented yet (see Issue #38)."
-            exit 1
-          fi
-
       - name: Sanity — required secrets present
         run: |
           if [ -z "${ANTHROPIC_API_KEY}" ] && [ "${DRY_RUN}" != "true" ]; then
