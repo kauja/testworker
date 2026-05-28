@@ -16,12 +16,21 @@ export default async function HomePage() {
       <div className="mb-8 flex items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Runs</h1>
-          <p className="mt-1 text-sm text-ink-muted">
-            クロール結果の一覧。新規実行は CLI から:
-            <code className="ml-2 rounded bg-bg-panel px-1.5 py-0.5 font-mono text-[12px] text-ink">
-              make crawl URL=http://localhost:3000
-            </code>
-          </p>
+          <p className="mt-1 text-sm text-ink-muted">クロール結果の一覧。新規実行は CLI から:</p>
+          <ul className="mt-2 space-y-1 text-xs text-ink-muted">
+            <li>
+              <code className="rounded bg-bg-panel px-1.5 py-0.5 font-mono text-[12px] text-ink">
+                make crawl URL=https://example.com
+              </code>{' '}
+              — 認証不要・即動く 30 秒例
+            </li>
+            <li>
+              <code className="rounded bg-bg-panel px-1.5 py-0.5 font-mono text-[12px] text-ink">
+                make crawl URL=http://host.docker.internal:3000
+              </code>{' '}
+              — ホスト上で動いているアプリ (Docker 内から見るため <code>host.docker.internal</code>)
+            </li>
+          </ul>
         </div>
       </div>
 
