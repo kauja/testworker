@@ -28,18 +28,51 @@ const DATA_DIR = (() => {
   }
 })();
 
-// `openReadDb` は readonly:true で開くため、 DB ファイルが存在しない初回起動で
-// SQLITE_CANTOPEN を投げて api がクラッシュする。 runner の migrate が先に
-// 走るのが正規フローなので、 ここでは「ファイル不在 = 未マイグレート」を明示
-// メッセージで終了する (5th round critical 2)。
-if (!existsSync(DB_PATH)) {
-  console.error(
-    `[testworker-api] DB not found at ${DB_PATH}. Run \`make migrate\` (or pnpm --filter @testworker/runner run migrate) before starting the api.`,
-  );
-  process.exit(1);
+// `openReadDb` は readonly:true で開くため、 DB ファイルが存在しないと
+// SQLITE_CANTOPEN を投げる。 runner の migrate が走る前に api だけ起動した場合
+// (`make up` を `make migrate` の前に実行した場合) でも process.exit すると、
+// `tsx watch` の再起動 loop に入り Onboarding 体験が壊れる (#141)。
+// listen は開始しつつ、 DB が現れるまで polling で待ち、 query 系 handler は
+// 503 + hint メッセージを返す方針に切り替える。
+const DB_RETRY_INTERVAL_MS = 1500;
+let dbInstance: ReturnType<typeof openReadDb> | null = null;
+
+function ensureDb(): typeof dbInstance {
+  if (dbInstance) return dbInstance;
+  if (!existsSync(DB_PATH)) return null;
+  try {
+    dbInstance = openReadDb(DB_PATH);
+    console.log(`[testworker-api] DB opened: ${DB_PATH}`);
+    return dbInstance;
+  } catch (err) {
+    console.warn(
+      `[testworker-api] DB open failed (will retry): ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return null;
+  }
 }
 
-const db = openReadDb(DB_PATH);
+async function pollUntilDbReady(): Promise<void> {
+  let waitedLogged = false;
+  while (!ensureDb()) {
+    if (!waitedLogged) {
+      console.warn(
+        `[testworker-api] DB not found at ${DB_PATH}. ` +
+          `Run \`make migrate\` (or \`pnpm --filter @testworker/runner run db:migrate\`) to initialize. ` +
+          `/runs etc. will return 503 until ready.`,
+      );
+      waitedLogged = true;
+    }
+    await new Promise((r) => setTimeout(r, DB_RETRY_INTERVAL_MS));
+  }
+}
+
+const DB_NOT_READY_BODY = {
+  error: 'db_not_ready',
+  hint: 'Database not initialized. Run `make migrate` (or `pnpm --filter @testworker/runner run db:migrate`).',
+} as const;
+
+void pollUntilDbReady();
 const app = new Hono();
 
 // CORS_ORIGIN 環境変数で許可 origin を制限する (Issue #103, defense in depth)。
@@ -65,23 +98,33 @@ app.use('/health', cors({ origin: CORS_ORIGIN }));
 app.use('/runs/*', cors({ origin: CORS_ORIGIN }));
 app.use('/pages/*', cors({ origin: CORS_ORIGIN }));
 
-app.get('/health', (c) => c.json({ ok: true }));
+app.get('/health', (c) => c.json({ ok: true, dbReady: dbInstance !== null }));
 
-app.get('/runs', (c) => c.json(listRuns(db)));
+app.get('/runs', (c) => {
+  const db = ensureDb();
+  if (!db) return c.json(DB_NOT_READY_BODY, 503);
+  return c.json(listRuns(db));
+});
 
 app.get('/runs/:id/graph', (c) => {
+  const db = ensureDb();
+  if (!db) return c.json(DB_NOT_READY_BODY, 503);
   const graph = getGraph(db, c.req.param('id'));
   if (!graph) return c.json({ error: 'not_found' }, 404);
   return c.json(graph);
 });
 
 app.get('/runs/:id/errors/grouped', (c) => {
+  const db = ensureDb();
+  if (!db) return c.json(DB_NOT_READY_BODY, 503);
   const groups = getErrorGroups(db, c.req.param('id'));
   if (groups == null) return c.json({ error: 'not_found' }, 404);
   return c.json(groups);
 });
 
 app.get('/runs/:id/diff', (c) => {
+  const db = ensureDb();
+  if (!db) return c.json(DB_NOT_READY_BODY, 503);
   const target = c.req.param('id');
   // ?base=previous で「1 つ前の run」を自動選択。 startUrl が同じ run の中で
   // started_at が target より古い最新を base にする (Intent #125 / Issue #85)。
@@ -97,6 +140,8 @@ app.get('/runs/:id/diff', (c) => {
 });
 
 app.get('/pages/:id', (c) => {
+  const db = ensureDb();
+  if (!db) return c.json(DB_NOT_READY_BODY, 503);
   const detail = getPageDetail(db, c.req.param('id'));
   if (!detail) return c.json({ error: 'not_found' }, 404);
   return c.json(detail);
