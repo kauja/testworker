@@ -88,6 +88,7 @@ const run = {
     cacheMode: 'warm' as const,
     networkThrottle: 'none' as const,
     cpuThrottle: 1,
+    deviceProfile: 'desktop' as const,
   },
   errorMessage: null,
   pagesDone: 0,

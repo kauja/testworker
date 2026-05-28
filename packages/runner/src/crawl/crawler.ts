@@ -37,6 +37,7 @@ import { createRobotsCache, isAllowedByRobots } from './robots.js';
 import { autoScroll } from './auto-scroll.js';
 import { hasResourceBlocking, installResourceBlocking } from './resource-block.js';
 import { loadInjectScript } from './inject.js';
+import { resolveDeviceProfile } from './devices.js';
 
 const DEFAULT_ROBOTS_UA = 'testworker';
 
@@ -94,10 +95,16 @@ export async function runCrawl(
   let edgeCount = 0;
 
   try {
+    // Issue #196: deviceProfile を 1 回だけ解決し、 newContext と
+    // pageState.viewport の両方で同じ値を使う (画面とメタの不一致を防ぐ)。
+    const device = resolveDeviceProfile(options);
     browser = await chromium.launch({ headless: true });
     context = await browser.newContext({
-      viewport: options.viewport,
-      userAgent: options.userAgent,
+      viewport: device.viewport,
+      userAgent: device.userAgent,
+      deviceScaleFactor: device.deviceScaleFactor,
+      isMobile: device.isMobile,
+      hasTouch: device.hasTouch,
       storageState: options.storageStatePath,
       recordHar: { path: harAbsPath, mode: 'minimal' },
     });
@@ -296,7 +303,7 @@ export async function runCrawl(
         depth: task.depth,
         visitedAt: new Date().toISOString(),
         screenshotPath,
-        viewport: options.viewport,
+        viewport: device.viewport,
         errorCount: errCount,
         consoleErrorCount: consoleErrCount,
         networkErrorCount: networkErrCount,

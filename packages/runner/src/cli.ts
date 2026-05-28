@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
-import { CrawlOptions, log, NetworkThrottlePreset, WaitStrategy } from '@testworker/shared';
+import {
+  CrawlOptions,
+  DeviceProfile,
+  log,
+  NetworkThrottlePreset,
+  WaitStrategy,
+} from '@testworker/shared';
 import { openDb } from './db/client.js';
 import { migrate } from './db/migrate.js';
 import { loadRunnerEnv, optionsFromEnv } from './config.js';
@@ -17,6 +23,7 @@ async function main(): Promise<void> {
       'wait-after-nav-ms': { type: 'string' },
       'wait-strategy': { type: 'string' },
       viewport: { type: 'string' },
+      device: { type: 'string' },
       'include-pattern': { type: 'string', multiple: true },
       'exclude-pattern': { type: 'string', multiple: true },
       'user-agent': { type: 'string' },
@@ -58,6 +65,9 @@ async function main(): Promise<void> {
       ? { waitStrategy: WaitStrategy.parse(values['wait-strategy']) }
       : {}),
     ...(values.viewport ? { viewport: parseViewport(values.viewport) } : {}),
+    // deviceProfile は DeviceProfile (zod enum) で narrow しつつ早期検証する
+    // (不正値は parse で throw → cli の error hint に流れる) (Issue #196)。
+    ...(values.device ? { deviceProfile: DeviceProfile.parse(values.device) } : {}),
     ...(values['include-pattern']
       ? { includeUrlPatterns: toStringArray(values['include-pattern']) }
       : {}),
