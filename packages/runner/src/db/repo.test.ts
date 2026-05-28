@@ -32,7 +32,8 @@ beforeEach(() => {
       viewport_h INTEGER NOT NULL,
       error_count INTEGER NOT NULL DEFAULT 0,
       console_error_count INTEGER NOT NULL DEFAULT 0,
-      network_error_count INTEGER NOT NULL DEFAULT 0
+      network_error_count INTEGER NOT NULL DEFAULT 0,
+      metrics_json TEXT
     );
     CREATE UNIQUE INDEX uniq_page_states_run_signature ON page_states(run_id, signature);
 
@@ -73,6 +74,7 @@ const run = {
     viewport: { width: 1280, height: 800 },
     includeUrlPatterns: [],
     excludeUrlPatterns: [],
+    captureWebVitals: true,
   },
   errorMessage: null,
 };
@@ -122,6 +124,7 @@ describe('graph repository writes', () => {
       errorCount: 1,
       consoleErrorCount: 2,
       networkErrorCount: 3,
+      metrics: { lcp: 2100, cls: 0.02 },
     });
     upsertPageState(db, {
       id: 'page_b',
@@ -136,6 +139,7 @@ describe('graph repository writes', () => {
       errorCount: 4,
       consoleErrorCount: 5,
       networkErrorCount: 6,
+      metrics: { lcp: 3200, cls: 0.18, fcp: 900 },
     });
 
     expect(db.$sqlite.prepare('SELECT COUNT(*) AS count FROM page_states').get()).toEqual({
@@ -155,6 +159,10 @@ describe('graph repository writes', () => {
       console_error_count: 7,
       network_error_count: 9,
     });
+    const metrics = db.$sqlite.prepare('SELECT metrics_json FROM page_states').get() as {
+      metrics_json: string;
+    };
+    expect(JSON.parse(metrics.metrics_json)).toEqual({ lcp: 3200, cls: 0.18, fcp: 900 });
   });
 
   it('ignores duplicate edges with the same run/from/to/trigger/selector', () => {
@@ -173,6 +181,7 @@ describe('graph repository writes', () => {
         errorCount: 0,
         consoleErrorCount: 0,
         networkErrorCount: 0,
+        metrics: {},
       });
     }
 

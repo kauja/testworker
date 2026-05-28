@@ -19,6 +19,7 @@ export function optionsFromEnv(startUrl: string): CrawlOptions {
     sameOriginOnly: boolFromEnv('SAME_ORIGIN_ONLY'),
     navTimeoutMs: numberFromEnv('NAV_TIMEOUT_MS'),
     waitAfterNavMs: numberFromEnv('WAIT_AFTER_NAV_MS'),
+    captureWebVitals: boolFromEnv('CAPTURE_WEB_VITALS'),
     storageStatePath: process.env.STORAGE_STATE_PATH || undefined,
     loginScriptPath: process.env.LOGIN_SCRIPT_PATH || undefined,
     userAgent: process.env.USER_AGENT || undefined,

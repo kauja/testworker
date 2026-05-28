@@ -97,6 +97,16 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
     (s, p) => s + p.errorCount + p.consoleErrorCount + p.networkErrorCount,
     0,
   );
+  const slowPages = useMemo(() => {
+    return graph.pages
+      .map((page) => {
+        const primary = primaryPerfMetric(page);
+        return primary ? { page, primary } : null;
+      })
+      .filter((item): item is { page: PageState; primary: PerfMetric } => item !== null)
+      .sort((a, b) => b.primary.score - a.primary.score || a.page.url.localeCompare(b.page.url))
+      .slice(0, 5);
+  }, [graph.pages]);
 
   const isFailed = graph.run.status === 'failed' || graph.run.status === 'canceled';
 
@@ -215,9 +225,83 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
               {minimapVisible ? 'minimap: on' : 'minimap: off'}
             </button>
           </Panel>
+          {slowPages.length > 0 && (
+            <Panel position="top-right">
+              <div className="max-w-[300px] rounded border border-line bg-bg-panel/80 p-2 text-[11px] backdrop-blur">
+                <div className="mb-1 text-[10px] uppercase tracking-wider text-ink-faint">
+                  Performance Top 5
+                </div>
+                <ol className="space-y-1">
+                  {slowPages.map(({ page, primary }) => (
+                    <li key={page.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedId(page.id)}
+                        className="grid w-full grid-cols-[1fr_auto] items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-bg-subtle focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+                      >
+                        <span className="truncate text-ink-muted">{page.title || page.url}</span>
+                        <span className={cn('font-mono', perfToneClass(primary.tone))}>
+                          {primary.label} {formatPerfValue(primary)}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </Panel>
+          )}
         </ReactFlow>
       </div>
       <PageDetailPanel pageId={selectedId} onSelectPage={setSelectedId} />
     </div>
   );
+}
+
+type PerfTone = 'good' | 'needs-improvement' | 'poor';
+type PerfMetric = {
+  label: 'LCP' | 'FCP' | 'TTFB' | 'INP';
+  value: number;
+  unit: 'ms';
+  tone: PerfTone;
+  score: number;
+};
+
+function primaryPerfMetric(page: PageState): PerfMetric | null {
+  const candidates: Array<PerfMetric | null> = [
+    msMetric('LCP', page.metrics.lcp, [2500, 4000]),
+    msMetric('INP', page.metrics.inp, [200, 500]),
+    msMetric('FCP', page.metrics.fcp, [1800, 3000]),
+    msMetric('TTFB', page.metrics.ttfb, [800, 1800]),
+  ];
+  return (
+    candidates.filter((m): m is PerfMetric => m !== null).sort((a, b) => b.score - a.score)[0] ??
+    null
+  );
+}
+
+function msMetric(
+  label: PerfMetric['label'],
+  value: number | null | undefined,
+  thresholds: [number, number],
+): PerfMetric | null {
+  if (typeof value !== 'number') return null;
+  const [good, poor] = thresholds;
+  const tone: PerfTone = value <= good ? 'good' : value <= poor ? 'needs-improvement' : 'poor';
+  const score = value / poor + (tone === 'poor' ? 2 : tone === 'needs-improvement' ? 1 : 0);
+  return { label, value, unit: 'ms', tone, score };
+}
+
+function perfToneClass(tone: PerfTone): string {
+  switch (tone) {
+    case 'good':
+      return 'text-ok';
+    case 'needs-improvement':
+      return 'text-warn';
+    case 'poor':
+      return 'text-bad';
+  }
+}
+
+function formatPerfValue(metric: PerfMetric): string {
+  return `${Math.round(metric.value)} ${metric.unit}`;
 }
