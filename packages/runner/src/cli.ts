@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
-import { log } from '@testworker/shared';
+import { CrawlOptions, log } from '@testworker/shared';
 import { openDb } from './db/client.js';
 import { migrate } from './db/migrate.js';
 import { loadRunnerEnv, optionsFromEnv } from './config.js';
@@ -18,6 +18,7 @@ async function main(): Promise<void> {
       'include-pattern': { type: 'string', multiple: true },
       'exclude-pattern': { type: 'string', multiple: true },
       'user-agent': { type: 'string' },
+      'cache-mode': { type: 'string' },
       'storage-state': { type: 'string' },
       'login-script': { type: 'string' },
       'no-same-origin': { type: 'boolean', default: false },
@@ -52,6 +53,7 @@ async function main(): Promise<void> {
       ? { excludeUrlPatterns: toStringArray(values['exclude-pattern']) }
       : {}),
     ...(values['user-agent'] ? { userAgent: values['user-agent'] } : {}),
+    ...(values['cache-mode'] ? { cacheMode: parseCacheMode(values['cache-mode']) } : {}),
     ...(values['storage-state'] ? { storageStatePath: values['storage-state'] } : {}),
     ...(values['login-script'] ? { loginScriptPath: values['login-script'] } : {}),
     ...(values['no-same-origin'] ? { sameOriginOnly: false } : {}),
@@ -144,4 +146,12 @@ function parseViewport(raw: string): { width: number; height: number } {
 function toStringArray(value: string | string[] | undefined): string[] {
   if (!value) return [];
   return Array.isArray(value) ? value : [value];
+}
+
+function parseCacheMode(raw: string): CrawlOptions['cacheMode'] {
+  const parsed = CrawlOptions.shape.cacheMode.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(`invalid --cache-mode: ${raw} (expected cold|warm|disabled)`);
+  }
+  return parsed.data;
 }

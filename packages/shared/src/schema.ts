@@ -35,6 +35,13 @@ export const CrawlOptions = z.object({
   excludeUrlPatterns: z.array(z.string()).default([]),
   userAgent: z.string().optional(),
   captureWebVitals: z.boolean().default(true),
+  /**
+   * Issue #205: HTTP キャッシュ制御。 `warm` (既定) はブラウザ既定の Cache-Control 挙動。
+   * `disabled` は CDP Network.setCacheDisabled で全リクエストをキャッシュ無視。
+   * `cold` は開始前にブラウザキャッシュ + Cookie をクリアしてから disabled と同じ扱い。
+   * 旧 run (フィールド追加前) は default の warm として解釈される。
+   */
+  cacheMode: z.enum(['cold', 'warm', 'disabled']).default('warm'),
 });
 export type CrawlOptions = z.infer<typeof CrawlOptions>;
 

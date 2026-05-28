@@ -30,6 +30,7 @@ import { computeSignature } from './signature.js';
 import { collectInteractions, type Interaction } from './interactions.js';
 import { applyPageStateId, createMonitors } from './monitors.js';
 import { collectWebVitals, installWebVitals } from './web-vitals.js';
+import { applyCacheMode } from './cache.js';
 import { loadLoginScript } from '../auth/login.js';
 import { createRobotsCache, isAllowedByRobots } from './robots.js';
 
@@ -106,6 +107,18 @@ export async function runCrawl(
     const page = await context.newPage();
     monitors.attach(page);
     page.setDefaultNavigationTimeout(options.navTimeoutMs);
+
+    // Issue #205: cacheMode を CDP で適用 (warm は no-op)。 cold は login 前に
+    // ブラウザキャッシュ + Cookie をクリアするので、 storageState ではなく loginScript と
+    // 組み合わせる前提。 CDP は Chromium 限定 / 失敗しても巡回は続行する (fail-open)。
+    try {
+      await applyCacheMode(context, page, options.cacheMode);
+    } catch (err) {
+      clog.warn(
+        { err: (err as Error).message, cacheMode: options.cacheMode },
+        'applyCacheMode failed',
+      );
+    }
 
     if (options.loginScriptPath) {
       const login = await loadLoginScript(options.loginScriptPath);
