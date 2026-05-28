@@ -98,13 +98,19 @@ export function createMonitors(): PageMonitors {
 
     page.on('requestfinished', async (req) => {
       const started = requestStart.get(req);
+      // await 前に push 先 buffer の参照を固定する。 await 中に rotate() が走ると
+      // networkBuf は新ページ用の空配列に差し替わるため、 await 完了後の push が
+      // 旧ページの request を新ページの snapshot に誤帰属させる race を生む。
+      // 固定参照と現在の buffer を比べ、 一致しない (= rotate された) なら drop。
+      const targetBuf = networkBuf;
       let res: Response | null = null;
       try {
         res = await req.response();
       } catch {
         res = null;
       }
-      networkBuf.push({
+      if (targetBuf !== networkBuf) return;
+      targetBuf.push({
         id: newEventId(),
         pageStateId: PLACEHOLDER,
         method: req.method(),
