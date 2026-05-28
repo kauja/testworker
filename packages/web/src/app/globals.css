@@ -52,3 +52,45 @@ body {
 .react-flow__attribution {
   display: none;
 }
+
+/* 印刷時の調整 (Intent #127 / 静的レポート Bolt)。
+   ダーク背景のままだとインク無駄なので白背景に変換し、 sticky / fixed
+   レイアウトを通常フローに戻して PDF が綺麗に出るようにする。 */
+@media print {
+  html,
+  body {
+    background: white !important;
+    color: black !important;
+    color-scheme: light !important;
+  }
+  /* tailwind の bg-* / text-* / border-* / divide-* を override してドキュメントぽく */
+  * {
+    background-color: transparent !important;
+    color: inherit !important;
+    border-color: #d0d4dc !important;
+    box-shadow: none !important;
+  }
+  /* テキスト色だけは tone (bad / accent) を残す */
+  .text-bad {
+    color: #b32d3a !important;
+  }
+  .text-accent {
+    color: #2e5dd0 !important;
+  }
+  a {
+    text-decoration: underline;
+    color: inherit !important;
+  }
+  /* スクリーンショットは PDF に乗せたい */
+  img {
+    max-width: 100% !important;
+    height: auto !important;
+    page-break-inside: avoid;
+  }
+  /* React Flow グラフは印刷不要 (report ページは React Flow を使わないが念のため) */
+  .react-flow,
+  .react-flow__minimap,
+  .react-flow__controls {
+    display: none !important;
+  }
+}
