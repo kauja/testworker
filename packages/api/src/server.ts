@@ -35,7 +35,14 @@ if (!existsSync(DB_PATH)) {
 const db = openReadDb(DB_PATH);
 const app = new Hono();
 
-app.use('*', cors({ origin: '*' }));
+// CORS は JSON API のみに付ける。 /assets/* に wildcard CORS を付けると、
+// 攻撃者ページから fetch('/assets/runs/.../screenshot.png') で screenshot や
+// HAR の中身を読み取れてしまう (Issue #95)。 撮影対象の管理画面に映った
+// 秘密情報が cross-origin で漏れるのを SOP (Same-Origin Policy) で防ぐため、
+// /assets/* には Access-Control-Allow-Origin を付けない。
+app.use('/health', cors({ origin: '*' }));
+app.use('/runs/*', cors({ origin: '*' }));
+app.use('/pages/*', cors({ origin: '*' }));
 
 app.get('/health', (c) => c.json({ ok: true }));
 
