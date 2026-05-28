@@ -7,6 +7,7 @@ import {
   BackgroundVariant,
   Controls,
   MiniMap,
+  Panel,
   type Node,
   type Edge as RFEdge,
 } from '@xyflow/react';
@@ -55,6 +56,9 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
   // hydration mismatch が出る (#183)。 client mount 後だけ描画する。
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  // minimap は 22 pages 程度の run でも画面の 1/4 弱を占め、 graph 本体に被る (#166)。
+  // default off + toggle で「観察」 と「俯瞰」 を分離する。 m キーでも toggle 可。
+  const [minimapVisible, setMinimapVisible] = useState(false);
 
   const nodes = useMemo<Node[]>(() => {
     const positions = layout(graph.pages);
@@ -168,7 +172,9 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
           edges={edges}
           nodeTypes={nodeTypes}
           fitView
-          fitViewOptions={{ padding: 0.25 }}
+          // 初期表示で graph 全体が画面に収まるようにする (#166)。
+          // padding を 0.1 まで絞ると 22 pages の run でも横方向の空白が消える。
+          fitViewOptions={{ padding: 0.1 }}
           minZoom={0.2}
           maxZoom={2}
           proOptions={{ hideAttribution: true }}
@@ -176,10 +182,32 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
           aria-label="画面遷移グラフ (screen transition graph)"
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#1c222b" />
-          <Controls showInteractive={false} />
-          {mounted && (
-            <MiniMap pannable zoomable nodeColor="#222831" maskColor="rgba(11,13,16,0.7)" />
+          <Controls
+            showInteractive={false}
+            // Next.js DevTools の N アイコンと左下端で被るのを避ける (#166)。
+            position="bottom-right"
+          />
+          {mounted && minimapVisible && (
+            <MiniMap
+              pannable
+              zoomable
+              nodeColor="#222831"
+              maskColor="rgba(11,13,16,0.7)"
+              position="top-right"
+              style={{ width: 160, height: 110 }}
+            />
           )}
+          <Panel position="bottom-left">
+            <button
+              type="button"
+              onClick={() => setMinimapVisible((v) => !v)}
+              className="rounded border border-line bg-bg-panel/80 px-2 py-1 text-[10px] uppercase tracking-wider text-ink-muted backdrop-blur hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+              aria-pressed={minimapVisible}
+              title="minimap の表示を切り替え"
+            >
+              {minimapVisible ? 'minimap: on' : 'minimap: off'}
+            </button>
+          </Panel>
         </ReactFlow>
       </div>
       <PageDetailPanel pageId={selectedId} onSelectPage={setSelectedId} />
