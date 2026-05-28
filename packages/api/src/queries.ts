@@ -8,6 +8,8 @@ import type {
   PageError,
   PageState,
   Run,
+  RunDiff,
+  RunDiffPage,
   RunSummary,
 } from '@testworker/shared';
 import { CrawlOptions } from '@testworker/shared';
@@ -278,4 +280,103 @@ export function getPageDetail(db: Database.Database, pageStateId: string): PageD
     db.prepare(`SELECT * FROM edges WHERE from_page_state_id = ?`).all(pageStateId) as EdgeRow[]
   ).map(rowToEdge);
   return { page, console: consoleEntries, network, errors, incoming, outgoing };
+}
+
+function rowToDiffPage(r: PageRow): RunDiffPage {
+  return {
+    pageStateId: r.id,
+    url: r.url,
+    title: r.title,
+    signature: r.signature,
+    depth: r.depth,
+    errorCount: r.error_count,
+    consoleErrorCount: r.console_error_count,
+    networkErrorCount: r.network_error_count,
+  };
+}
+
+/**
+ * 直前 run を取得する (Intent #125 / Run 差分の「最新 vs 1 つ前」を 1 クリックで)。
+ * startUrl が同一かつ started_at が target より古いものの中で最も新しい run id を返す。
+ * 見つからなければ null。
+ */
+export function previousRunOf(db: Database.Database, targetRunId: string): string | null {
+  const target = db
+    .prepare(`SELECT start_url, started_at FROM runs WHERE id = ?`)
+    .get(targetRunId) as { start_url: string; started_at: string } | undefined;
+  if (!target) return null;
+  const prev = db
+    .prepare(
+      `SELECT id FROM runs
+       WHERE start_url = ? AND started_at < ?
+       ORDER BY started_at DESC LIMIT 1`,
+    )
+    .get(target.start_url, target.started_at) as { id: string } | undefined;
+  return prev?.id ?? null;
+}
+
+export function getRunDiff(
+  db: Database.Database,
+  baseRunId: string,
+  targetRunId: string,
+): RunDiff | null {
+  const baseRow = db.prepare(`SELECT id FROM runs WHERE id = ?`).get(baseRunId) as
+    | { id: string }
+    | undefined;
+  const targetRow = db.prepare(`SELECT id FROM runs WHERE id = ?`).get(targetRunId) as
+    | { id: string }
+    | undefined;
+  if (!baseRow || !targetRow) return null;
+
+  const basePages = db
+    .prepare(`SELECT * FROM page_states WHERE run_id = ?`)
+    .all(baseRunId) as PageRow[];
+  const targetPages = db
+    .prepare(`SELECT * FROM page_states WHERE run_id = ?`)
+    .all(targetRunId) as PageRow[];
+
+  // signature は (run_id, signature) UNIQUE なので run 内 1 件、 run を跨いで同じ
+  // 値は「同一画面」を示す (Architecture comment 通り)。
+  const baseBySig = new Map<string, PageRow>();
+  for (const p of basePages) baseBySig.set(p.signature, p);
+  const targetBySig = new Map<string, PageRow>();
+  for (const p of targetPages) targetBySig.set(p.signature, p);
+
+  const newPages: RunDiffPage[] = [];
+  const commonPages: RunDiffPage[] = [];
+  for (const [sig, p] of targetBySig.entries()) {
+    if (baseBySig.has(sig)) commonPages.push(rowToDiffPage(p));
+    else newPages.push(rowToDiffPage(p));
+  }
+  const removedPages: RunDiffPage[] = [];
+  for (const [sig, p] of baseBySig.entries()) {
+    if (!targetBySig.has(sig)) removedPages.push(rowToDiffPage(p));
+  }
+  // ノイズの少ない順序: 影響の大きい newPages → removedPages の順で表示できるよう
+  // それぞれ errorCount desc / depth asc で並べる。
+  const byImpact = (a: RunDiffPage, b: RunDiffPage) =>
+    b.errorCount +
+      b.consoleErrorCount +
+      b.networkErrorCount -
+      (a.errorCount + a.consoleErrorCount + a.networkErrorCount) ||
+    a.depth - b.depth ||
+    a.url.localeCompare(b.url);
+  newPages.sort(byImpact);
+  removedPages.sort(byImpact);
+  commonPages.sort(byImpact);
+
+  return {
+    baseRunId,
+    targetRunId,
+    newPages,
+    removedPages,
+    commonPages,
+    summary: {
+      baseTotal: basePages.length,
+      targetTotal: targetPages.length,
+      newCount: newPages.length,
+      removedCount: removedPages.length,
+      commonCount: commonPages.length,
+    },
+  };
 }

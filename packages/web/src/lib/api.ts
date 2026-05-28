@@ -1,4 +1,4 @@
-import type { GraphPayload, PageDetail, RunSummary } from '@testworker/shared';
+import type { GraphPayload, PageDetail, RunDiff, RunSummary } from '@testworker/shared';
 
 const SERVER_BASE = process.env.API_BASE_URL ?? 'http://api:3001';
 const CLIENT_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001';
@@ -18,6 +18,11 @@ export const fetchGraph = (runId: string, init?: RequestInit) =>
   get<GraphPayload>(`/runs/${runId}/graph`, init);
 export const fetchPage = (pageId: string, init?: RequestInit) =>
   get<PageDetail>(`/pages/${pageId}`, init);
+export const fetchRunDiff = (
+  runId: string,
+  base: string | 'previous' = 'previous',
+  init?: RequestInit,
+) => get<RunDiff>(`/runs/${runId}/diff?base=${encodeURIComponent(base)}`, init);
 
 // 常に CLIENT_BASE (ブラウザ到達可能な URL) を使う。
 // SSR 時にもこの URL を生成して HTML にシリアライズすることで、 ブラウザが直接

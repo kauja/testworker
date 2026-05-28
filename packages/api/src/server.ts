@@ -5,7 +5,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serve } from '@hono/node-server';
 import { openReadDb } from './db.js';
-import { getGraph, getPageDetail, listRuns } from './queries.js';
+import { getGraph, getPageDetail, getRunDiff, listRuns, previousRunOf } from './queries.js';
 
 const PORT = Number(process.env.API_PORT ?? 3001);
 const DB_PATH = process.env.DB_PATH ?? './data/db/testworker.sqlite';
@@ -66,6 +66,21 @@ app.get('/runs/:id/graph', (c) => {
   const graph = getGraph(db, c.req.param('id'));
   if (!graph) return c.json({ error: 'not_found' }, 404);
   return c.json(graph);
+});
+
+app.get('/runs/:id/diff', (c) => {
+  const target = c.req.param('id');
+  // ?base=previous で「1 つ前の run」を自動選択。 startUrl が同じ run の中で
+  // started_at が target より古い最新を base にする (Intent #125 / Issue #85)。
+  let baseId = c.req.query('base');
+  if (!baseId || baseId === 'previous') {
+    const prev = previousRunOf(db, target);
+    if (!prev) return c.json({ error: 'no_previous_run' }, 404);
+    baseId = prev;
+  }
+  const diff = getRunDiff(db, baseId, target);
+  if (!diff) return c.json({ error: 'not_found' }, 404);
+  return c.json(diff);
 });
 
 app.get('/pages/:id', (c) => {
