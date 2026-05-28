@@ -167,9 +167,11 @@ pnpm --filter @testworker/runner run crawl -- --url http://localhost:3000
 
 ## Roadmap
 
-- [ ] アサーション DSL（クロール中に検証）
+testworker は **AI / 外部 SaaS 非依存** が方針（運用コストをゼロに保つため）。実現手段は常にルールベース / ローカル完結を選びます。
+
+- [ ] アサーション DSL（クロール中に宣言的に検証）
 - [ ] フォーム自動入力 / 認証フォームの宣言的記述
-- [ ] LLM による画面妥当性チェック（誤遷移・崩れ検知）
+- [ ] 視覚差分による崩れ・誤遷移検知（pixel diff + DOM signature 変化 — ルールベース）
 - [ ] HAR エクスポート
 - [ ] CI 連携 / GitHub Actions レポーター
 - [ ] 差分ビュー（前回 run との遷移グラフ diff）

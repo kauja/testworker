@@ -68,7 +68,32 @@
 
 **「`.gitignore` に追加すればコミットしてよい」は誤り**。そもそも testworker のツリーに置かない。
 
+## Product Principles（必読 — Intent / Bolt 選定の前提）
+
+testworker は **「あえて AI / 外部 SaaS を使わないことで運用コストをゼロに保つ」** ことを差別化軸とする。Intent / Bolt / PR の選定は以下の制約の上に行う。違反するアイデアは魅力的でも採用しない。
+
+| Principle            | 意味                                                                                           |
+| -------------------- | ---------------------------------------------------------------------------------------------- |
+| **AI 非依存**        | クロール / 解析 / 優先度判定 / 比較はすべてルールベース。LLM や ML モデルを runtime に持たない |
+| **外部 SaaS 非依存** | テレメトリ送信なし、外部ログイン不要、API key を要求しない                                     |
+| **ローカル完結**     | screenshot / network / errors の **ユーザデータは絶対にマシン外に出さない**                    |
+| **運用コスト = ¥0**  | docker compose + SQLite + local FS のみ。RDBMS / object storage / CDN を要求しない             |
+
+### 良くある誤読への注意
+
+- 次節「**AI-DLC**」の "AI" は **開発手法** の意味（Claude Code エージェントが Issue / PR を駆動する）であり、**プロダクト本体は AI 非依存**。混同しない。
+- Roadmap や Intent で「priority スコア」「重要度判定」を扱う場合も、**式は決定論的に明示する**（例: `error_count × severity_weight × occurrence`）。「LLM が判定」は採用しない。
+- 「便利だから外部 API を 1 つだけ」という弱い動機での外部依存追加は **wontfix**。
+
+### 例外（明示的に許される外部依存）
+
+- **OSS の標準ライブラリ / runtime**（npm / pypi / Docker base images）— 当然 OK
+- **GitHub API**（Issue / PR / Actions）— OSS 運用上不可避、ユーザのクロールデータには触らない
+- **クロール対象として明示的にユーザが指定した URL** — 当然 OK
+
 ## AI-DLC: Intent → Bolt の運用（必読）
+
+> ⚠️ ここでの **"AI"** は前節 Product Principles のとおり **開発手法**（エージェントが work する）の意味で、**プロダクト本体の AI 利用ではない**。
 
 testworker は「Issue を作る → 拾う → PR にする」のフラットな運用に加え、その上に **Intent → Bolt → Task/PR** の Outcome-driven レイヤを持つ。Output（タスク完了数）ではなく **Outcome（あるべき姿の達成度）** を測るためのハーネス。
 
