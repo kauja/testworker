@@ -19,5 +19,9 @@ export const fetchGraph = (runId: string, init?: RequestInit) =>
 export const fetchPage = (pageId: string, init?: RequestInit) =>
   get<PageDetail>(`/pages/${pageId}`, init);
 
-export const assetUrl = (relPath: string) =>
-  `${typeof window === 'undefined' ? SERVER_BASE : CLIENT_BASE}/assets/${relPath}`;
+// 常に CLIENT_BASE (ブラウザ到達可能な URL) を使う。
+// SSR 時にもこの URL を生成して HTML にシリアライズすることで、 ブラウザが直接
+// fetch する screenshot URL を到達可能なものに揃える。 SERVER_BASE (= 例えば
+// docker-compose 内の `http://api:3001`) を SSR でシリアライズすると、 ブラウザ
+// から `http://api:3001/...` に取りに行ってしまい screenshot 表示が永久に壊れる。
+export const assetUrl = (relPath: string) => `${CLIENT_BASE}/assets/${relPath}`;
