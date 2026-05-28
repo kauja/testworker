@@ -68,7 +68,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          persist-credentials: true
+          # persist-credentials: false にすることで、 actions/checkout が .git/config に
+          # extraheader (= GITHUB_TOKEN) を書き込まなくなる。 これで claude -p が
+          # worktree を読んでも `cat .git/config` でトークンが model 入力に漏れる経路を断つ。
+          # push が必要な step は別途 `git -c http.extraheader=...` か `gh auth setup-git`
+          # で都度認証する。
+          persist-credentials: false
 
       - name: Sanity — required secrets present
         run: |
