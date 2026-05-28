@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
-import { log } from '@testworker/shared';
+import { DeviceProfile, log } from '@testworker/shared';
 import { openDb } from './db/client.js';
 import { migrate } from './db/migrate.js';
 import { loadRunnerEnv, optionsFromEnv } from './config.js';
@@ -15,6 +15,7 @@ async function main(): Promise<void> {
       'nav-timeout-ms': { type: 'string' },
       'wait-after-nav-ms': { type: 'string' },
       viewport: { type: 'string' },
+      device: { type: 'string' },
       'include-pattern': { type: 'string', multiple: true },
       'exclude-pattern': { type: 'string', multiple: true },
       'user-agent': { type: 'string' },
@@ -45,6 +46,9 @@ async function main(): Promise<void> {
     ...(values['nav-timeout-ms'] ? { navTimeoutMs: Number(values['nav-timeout-ms']) } : {}),
     ...(values['wait-after-nav-ms'] ? { waitAfterNavMs: Number(values['wait-after-nav-ms']) } : {}),
     ...(values.viewport ? { viewport: parseViewport(values.viewport) } : {}),
+    // deviceProfile は DeviceProfile (zod enum) で narrow しつつ早期検証する
+    // (不正値は parse で throw → cli の error hint に流れる) (Issue #196)。
+    ...(values.device ? { deviceProfile: DeviceProfile.parse(values.device) } : {}),
     ...(values['include-pattern']
       ? { includeUrlPatterns: toStringArray(values['include-pattern']) }
       : {}),

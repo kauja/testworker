@@ -14,6 +14,15 @@ export const NavigationTrigger = z.enum([
 ]);
 export type NavigationTrigger = z.infer<typeof NavigationTrigger>;
 
+/**
+ * Device / Viewport プリセット (Issue #196)。 named preset から viewport / userAgent /
+ * deviceScaleFactor を解決して Playwright context に渡す。
+ * `desktop` (default) は完全 passthrough = 既存 `viewport` / `userAgent` をそのまま使い、
+ * 旧 run との後方互換を保つ。 それ以外の profile は viewport / UA / DSF を上書きする。
+ */
+export const DeviceProfile = z.enum(['desktop', 'iphone-14', 'pixel-7', 'ipad-mini']);
+export type DeviceProfile = z.infer<typeof DeviceProfile>;
+
 export const CrawlOptions = z.object({
   startUrl: z.string().url(),
   maxDepth: z.number().int().min(0).max(20).default(3),
@@ -35,6 +44,12 @@ export const CrawlOptions = z.object({
   excludeUrlPatterns: z.array(z.string()).default([]),
   userAgent: z.string().optional(),
   captureWebVitals: z.boolean().default(true),
+  /**
+   * Device / Viewport プリセット (Issue #196)。 default `desktop` は passthrough で
+   * 既存挙動を維持。 非 default の profile は viewport / userAgent / deviceScaleFactor を
+   * 上書きする (実 viewport は runner 側の resolveDeviceProfile が決定)。
+   */
+  deviceProfile: DeviceProfile.default('desktop'),
 });
 export type CrawlOptions = z.infer<typeof CrawlOptions>;
 

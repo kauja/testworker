@@ -79,6 +79,7 @@ const run = {
     includeUrlPatterns: [],
     excludeUrlPatterns: [],
     captureWebVitals: true,
+    deviceProfile: 'desktop' as const,
   },
   errorMessage: null,
   pagesDone: 0,
