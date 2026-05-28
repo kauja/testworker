@@ -68,9 +68,72 @@
 
 **「`.gitignore` に追加すればコミットしてよい」は誤り**。そもそも testworker のツリーに置かない。
 
+## AI-DLC: Intent → Bolt の運用（必読）
+
+testworker は「Issue を作る → 拾う → PR にする」のフラットな運用に加え、その上に **Intent → Bolt → Task/PR** の Outcome-driven レイヤを持つ。Output（タスク完了数）ではなく **Outcome（あるべき姿の達成度）** を測るためのハーネス。
+
+```
+Intent (PdM Outcome / 4-8 週)
+   └── Bolt (1-2 週で動かす単位 / 1 PR で閉じる)
+          └── PR / commit
+```
+
+### 役割
+
+| 種類       | ラベル                       | 粒度               | 閉じ方                                   |
+| ---------- | ---------------------------- | ------------------ | ---------------------------------------- |
+| **Intent** | `type:intent` + `stage:*`    | 4-8 週 / outcome   | Success Metrics が満たされて手動 close   |
+| **Bolt**   | `type:bolt` + `stage:*`      | 1-2 週 / 1 PR 規模 | `Closes #N` で PR merge により自動 close |
+| bug / feat | `bug` / `enhancement` + Area | 任意               | 通常 PR → merge                          |
+
+Intent は **必ず 1 つ以上の Bolt を持つ**。Bolt は **必ず 1 つの Parent Intent を持つ**。bug / feat は Intent 外で動いてよい（小さい改善 / 緊急対応）が、戦略的な追加は Bolt 化して Intent にぶら下げる。
+
+### Intent の書き方
+
+- Outcome を「**<誰> が <どんな状況> で <何> できる**」の 1 文で書く（機能 = What ではなく、ユーザ価値 = Why → Outcome）
+- **Success Metrics は measurable** に。「使いやすくなる」は不可、「設定時間が 30 分 → 5 分」は可
+- **Non-goal を必ず書く**（スコープを絞らないと Intent が肥大化する）
+- テンプレート: `.github/ISSUE_TEMPLATE/intent.md`
+
+### Bolt の書き方
+
+- **Parent Intent を必ず記載**（無いなら Bolt ではなく `bug` / `enhancement` で起票し直す）
+- 完了条件は **PR merge 時点で観測可能なもの** だけ（「将来の Bolt で完成」は不可）
+- テンプレート: `.github/ISSUE_TEMPLATE/bolt.md`
+
+### Lifecycle と状態遷移
+
+```
+draft   → active     →   done
+(議論中)  (PR/作業中)    (完了)
+```
+
+- `stage:draft`: Outcome / Metrics / 完了条件が確定していない。**この状態の Issue は claim できない**
+- `stage:active`: 作業 OK。Bolt は claim と同時に `status:in-progress` を併用
+- `stage:done`: Intent は Success Metrics が満たされたら手動で `stage:done` + close。Bolt は PR merge で自動 close（merge 時に `stage:done` 付与）
+
+### エージェントから見た運用ルール
+
+- **「次にやるべきこと」を探すとき**: まず `type:intent` + `stage:active` を見て、配下の Bolt から **`stage:active` かつ `status:ready`** を拾う。Intent 外（`bug` / `enhancement`）は Bolt より優先しない（緊急の bug を除く）
+- **新しい大きい機能を起票しようとして手が止まったら**: それは Intent かもしれない。`intent.md` テンプレで起票して `stage:draft` に置く
+- **Intent 起票は誰でも OK**（人間 / AI）。`stage:draft` のまま 1 週間放置で「方向性 OK か」を確認する
+- **Intent の Success Metrics は途中で変えない**。変えたい場合は新 Intent を切る（古い Intent は wontfix で close）
+- **Bolt の parent を後から付け替えない**（trace が壊れる）
+
+### bug / hotfix は Intent 不要
+
+- 既存 Outcome を維持するための **修復作業（バグ / セキュリティ / 依存更新）は Intent を持たない**
+- Type は `bug` / `chore` のまま、`type:bolt` ラベルを付けない
+
+### 既存 Issue の取り扱い
+
+このハーネス導入前に起票された Issue は、retroactively に `type:bolt` 化することも可能だが強制しない。新しく起票するものから適用する。
+
 ## Issue ドリブン開発（必読）
 
 このリポジトリは **「Issue を作る → 見つける → 処理する」** のサイクルで進める。意思決定の歴史的経緯は `docs/decisions/`（gitignore 済み、ローカル個人ログ）に保管している。
+
+上位の Outcome レイヤは前節「AI-DLC: Intent → Bolt の運用」を参照。
 
 ### 作業中に「対応が必要」と感じたら、即 Issue を立てる
 
