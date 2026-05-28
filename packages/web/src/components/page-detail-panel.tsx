@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import type { ConsoleEntry, Edge, NetworkEntry, PageDetail } from '@testworker/shared';
+import type { ConsoleEntry, Edge, NetworkEntry, PageDetail, PageMetrics } from '@testworker/shared';
 import { assetUrl, fetchPage } from '@/lib/api';
 import { cn } from '@/lib/cn';
 
@@ -176,6 +176,7 @@ export function PageDetailPanel({
             ) : (
               <div className="text-xs text-ink-muted">no screenshot</div>
             )}
+            <PerformanceSection metrics={detail.page.metrics} />
           </div>
         </div>
         <div
@@ -235,6 +236,98 @@ export function PageDetailPanel({
       </div>
     </aside>
   );
+}
+
+type MetricKey = 'lcp' | 'cls' | 'inp' | 'ttfb' | 'fcp';
+type MetricTone = 'good' | 'needs-improvement' | 'poor' | 'missing';
+
+const METRICS: Array<{
+  key: MetricKey;
+  label: string;
+  unit: 'ms' | '';
+  thresholds: [number, number];
+}> = [
+  { key: 'lcp', label: 'LCP', unit: 'ms', thresholds: [2500, 4000] },
+  { key: 'cls', label: 'CLS', unit: '', thresholds: [0.1, 0.25] },
+  { key: 'inp', label: 'INP', unit: 'ms', thresholds: [200, 500] },
+  { key: 'ttfb', label: 'TTFB', unit: 'ms', thresholds: [800, 1800] },
+  { key: 'fcp', label: 'FCP', unit: 'ms', thresholds: [1800, 3000] },
+];
+
+function PerformanceSection({ metrics }: { metrics: PageMetrics }) {
+  const hasMetrics = METRICS.some((m) => typeof metrics[m.key] === 'number');
+  return (
+    <section className="mt-4 rounded border border-line bg-bg-panel p-3 text-xs">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-[10px] uppercase tracking-wider text-ink-faint">Performance</h3>
+        <span className="text-[10px] text-ink-faint">Web Vitals</span>
+      </div>
+      {hasMetrics ? (
+        <div className="grid grid-cols-2 gap-2">
+          {METRICS.map((m) => {
+            const value = metrics[m.key];
+            const tone = metricTone(value, m.thresholds);
+            return (
+              <div key={m.key} className="rounded border border-line bg-bg-subtle px-2 py-1.5">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-[10px] uppercase tracking-wider text-ink-faint">
+                    {m.label}
+                  </span>
+                  <span className={cn('font-mono text-sm', metricToneClass(tone))}>
+                    {formatMetric(value, m.unit)}
+                  </span>
+                </div>
+                <div className={cn('mt-1 text-[10px]', metricToneClass(tone))}>
+                  {metricLabel(tone)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-ink-muted">not captured</p>
+      )}
+    </section>
+  );
+}
+
+function metricTone(value: number | null | undefined, [good, poor]: [number, number]): MetricTone {
+  if (typeof value !== 'number') return 'missing';
+  if (value <= good) return 'good';
+  if (value <= poor) return 'needs-improvement';
+  return 'poor';
+}
+
+function metricToneClass(tone: MetricTone): string {
+  switch (tone) {
+    case 'good':
+      return 'text-ok';
+    case 'needs-improvement':
+      return 'text-warn';
+    case 'poor':
+      return 'text-bad';
+    case 'missing':
+      return 'text-ink-faint';
+  }
+}
+
+function metricLabel(tone: MetricTone): string {
+  switch (tone) {
+    case 'good':
+      return 'Good';
+    case 'needs-improvement':
+      return 'NI';
+    case 'poor':
+      return 'Poor';
+    case 'missing':
+      return 'n/a';
+  }
+}
+
+function formatMetric(value: number | null | undefined, unit: 'ms' | ''): string {
+  if (typeof value !== 'number') return 'n/a';
+  if (unit === 'ms') return `${Math.round(value)} ms`;
+  return value.toFixed(3);
 }
 
 function RoutesTab({

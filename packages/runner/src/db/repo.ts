@@ -41,11 +41,12 @@ export function upsertPageState(db: Db, page: PageState): void {
   const stmt = db.$sqlite.prepare(`
     INSERT INTO page_states (
       id, run_id, url, title, signature, depth, visited_at, screenshot_path,
-      viewport_w, viewport_h, error_count, console_error_count, network_error_count
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      viewport_w, viewport_h, error_count, console_error_count, network_error_count, metrics_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(run_id, signature) DO UPDATE SET
       title = excluded.title,
       screenshot_path = excluded.screenshot_path,
+      metrics_json = excluded.metrics_json,
       error_count = page_states.error_count + excluded.error_count,
       console_error_count = page_states.console_error_count + excluded.console_error_count,
       network_error_count = page_states.network_error_count + excluded.network_error_count
@@ -64,6 +65,7 @@ export function upsertPageState(db: Db, page: PageState): void {
     page.errorCount,
     page.consoleErrorCount,
     page.networkErrorCount,
+    JSON.stringify(page.metrics ?? {}),
   );
 }
 
