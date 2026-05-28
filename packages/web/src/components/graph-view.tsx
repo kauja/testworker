@@ -13,6 +13,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import type { GraphPayload, PageState } from '@testworker/shared';
 import { cn } from '@/lib/cn';
+import { computePageLabels } from '@/lib/page-label';
 import { PageNode } from './page-node';
 import { PageDetailPanel } from './page-detail-panel';
 
@@ -52,11 +53,17 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
 
   const nodes = useMemo<Node[]>(() => {
     const positions = layout(graph.pages);
+    // 全 pages 単位で title 重複を見て unique を保つ表示 label を一括計算 (#174)。
+    const labels = computePageLabels(graph.pages);
     return graph.pages.map((p) => ({
       id: p.id,
       type: 'page',
       position: positions[p.id] ?? { x: 0, y: 0 },
-      data: { page: p, selected: p.id === selectedId },
+      data: {
+        page: p,
+        selected: p.id === selectedId,
+        displayLabel: labels.get(p.id),
+      },
       width: NODE_W,
       height: NODE_H,
     }));
