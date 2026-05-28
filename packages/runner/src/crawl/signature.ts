@@ -75,7 +75,11 @@ export const STRUCTURE_SCRIPT = `() => {
 export async function computeSignature(page: Page): Promise<PageSignature> {
   const url = page.url();
   const title = await page.title().catch(() => '');
-  const dom = (await page.evaluate(STRUCTURE_SCRIPT)) as {
+  // STRUCTURE_SCRIPT は IIFE で wrap して page.evaluate に渡す。 string を直接
+  // 渡すと Playwright は expression として評価するだけで arrow function が
+  // 自動 invoke されず、 dom が Function オブジェクトになって以降の参照が
+  // undefined.tokens で TypeError になる (#135)。
+  const dom = (await page.evaluate(`(${STRUCTURE_SCRIPT})()`)) as {
     tokens: string;
     pathname: string;
     search: string;
