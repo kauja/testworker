@@ -23,6 +23,8 @@ REPO="${GITHUB_REPOSITORY:-kauja/testworker}"
 MAX_FIX_PASSES="${MAX_FIX_PASSES:-1}"
 CI_TIMEOUT_SECONDS="${CI_TIMEOUT_SECONDS:-1500}"
 CI_POLL_INTERVAL="${CI_POLL_INTERVAL:-30}"
+DIFF_BASE_REF="${AUTO_RESOLVE_DIFF_BASE_REF:-origin/main}"
+DIFF_RANGE="${DIFF_BASE_REF}..HEAD"
 
 # Files Claude is never allowed to modify. Regex, alternation form for `grep -E`.
 DENYLIST_REGEX='^(auth/|payments/|.*migration.*|\.env(\.|$)|\.github/workflows/)'
@@ -30,6 +32,28 @@ DENYLIST_REGEX='^(auth/|payments/|.*migration.*|\.env(\.|$)|\.github/workflows/)
 # ---- helpers ----------------------------------------------------------------
 
 log() { printf '%s [auto-resolve] %s\n' "$(date -u +%FT%TZ)" "$*"; }
+
+changed_files_since_base() {
+  if ! git rev-parse --verify --quiet "$DIFF_BASE_REF" >/dev/null; then
+    log "diff base ref is unavailable: ${DIFF_BASE_REF}"
+    return 1
+  fi
+  if ! git diff --name-only "$DIFF_RANGE"; then
+    log "failed to compute changed files for range: ${DIFF_RANGE}"
+    return 1
+  fi
+}
+
+working_tree_files() {
+  git status --porcelain --untracked-files=all | awk '{print $2}'
+}
+
+all_changed_files() {
+  {
+    changed_files_since_base
+    working_tree_files
+  } | sort -u
+}
 
 issue_body() {
   gh issue view "$ISSUE" --repo "$REPO" --json title,body,labels \
@@ -46,7 +70,11 @@ slugify_title() {
 
 denylist_violations() {
   # Echoes matching files; exit 0 if none, 1 if any.
-  if git diff --name-only main..HEAD | grep -E "${DENYLIST_REGEX}" || git status --porcelain | awk '{print $2}' | grep -E "${DENYLIST_REGEX}"; then
+  local changed
+  if ! changed="$(all_changed_files)"; then
+    return 1
+  fi
+  if printf '%s\n' "$changed" | grep -E "${DENYLIST_REGEX}"; then
     return 1
   fi
   return 0
@@ -54,9 +82,12 @@ denylist_violations() {
 
 requires_tests() {
   # If new TS/Python source files are added but no test files are added/modified, return 1.
-  local src tests
-  src=$(git diff --name-only main..HEAD | grep -E '\.(ts|tsx|py)$' | grep -vE '\.(test|spec)\.' || true)
-  tests=$(git diff --name-only main..HEAD | grep -E '\.(test|spec)\.(ts|tsx|py)$' || true)
+  local changed src tests
+  if ! changed="$(all_changed_files)"; then
+    return 1
+  fi
+  src=$(printf '%s\n' "$changed" | grep -E '\.(ts|tsx|py)$' | grep -vE '\.(test|spec)\.' || true)
+  tests=$(printf '%s\n' "$changed" | grep -E '\.(test|spec)\.(ts|tsx|py)$' || true)
   if [ -n "$src" ] && [ -z "$tests" ]; then
     return 1
   fi
@@ -166,8 +197,9 @@ fi
 log "checking denylist"
 if ! denylist_violations; then
   log "DENYLIST VIOLATION detected; aborting (no push)"
+  DENYLIST_MATCHES=$(all_changed_files | grep -E "${DENYLIST_REGEX}" | head -5 | paste -sd, - || true)
   gh issue comment "$ISSUE" --repo "$REPO" \
-    --body "auto-resolve: aborted — denylist files were touched ($(git diff --name-only main..HEAD | grep -E "${DENYLIST_REGEX}" | head -5 | paste -sd, -)). Human review required."
+    --body "auto-resolve: aborted — denylist files were touched (${DENYLIST_MATCHES:-diff failed}). Human review required."
   exit 2
 fi
 
@@ -181,7 +213,7 @@ else
   DRAFT_NOTE=""
 fi
 
-if [ -z "$(git status --porcelain)" ] && [ "$(git rev-list --count origin/main..HEAD)" = "0" ]; then
+if [ -z "$(git status --porcelain)" ] && [ "$(git rev-list --count "$DIFF_RANGE")" = "0" ]; then
   log "no changes produced by claude; commenting and exiting"
   gh issue comment "$ISSUE" --repo "$REPO" \
     --body "auto-resolve: claude produced no changes. The issue may need clearer requirements."

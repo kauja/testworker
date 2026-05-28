@@ -34,6 +34,7 @@ services:
       WEB_PORT: 3000
       API_BASE_URL: http://api:3001
       NEXT_PUBLIC_API_BASE_URL: http://localhost:${API_PORT:-3001}
+      NEXT_PUBLIC_REPO_URL: ${NEXT_PUBLIC_REPO_URL:-}
     ports:
       - '${WEB_PORT:-3000}:3000'
     volumes:
