@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { fetchErrorGroups, fetchGraph } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { PrintButton } from '@/components/print-button';
+import { TimeStamp } from '@/components/time-stamp';
 
 /**
  * Run の静的レポート (Intent #127 / Bolt: 静的レポート HTML エクスポート)。
@@ -41,7 +42,10 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
           <h1 className="text-2xl font-medium text-ink">testworker run report</h1>
           <p className="mt-1 text-xs text-ink-muted">
             <span className="font-mono">{id}</span> · start: {graph.run.startUrl} · started{' '}
-            {new Date(graph.run.startedAt).toLocaleString()}
+            <TimeStamp
+              value={graph.run.startedAt}
+              options={{ dateStyle: 'medium', timeStyle: 'short' }}
+            />
           </p>
         </div>
         <nav className="flex gap-2 text-xs print:hidden" aria-label="report navigation">
