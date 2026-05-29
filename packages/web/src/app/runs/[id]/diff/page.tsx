@@ -6,6 +6,7 @@ import { cn } from '@/lib/cn';
 
 interface SearchParams {
   base?: string;
+  showFlaky?: string;
 }
 
 export default async function DiffPage({
@@ -18,10 +19,11 @@ export default async function DiffPage({
   const { id } = await params;
   const sp = await searchParams;
   const baseQuery = sp.base ?? 'previous';
+  const showFlaky = sp.showFlaky === '1' || sp.showFlaky === 'true';
 
   let diff;
   try {
-    diff = await fetchRunDiff(id, baseQuery);
+    diff = await fetchRunDiff(id, baseQuery, showFlaky);
   } catch (err) {
     // base が指定なしで前 run が無い場合は 404 になる → 明示的にメッセージ
     const msg = err instanceof Error ? err.message : String(err);
@@ -59,15 +61,30 @@ export default async function DiffPage({
             <span className="font-mono">{diff.targetRunId}</span> (Intent #125 / Issue #85)
           </p>
         </div>
-        <Link
-          href={`/runs/${id}`}
-          className="rounded border border-line px-3 py-1.5 text-xs text-ink-muted hover:border-accent hover:text-accent"
-        >
-          ← graph view
-        </Link>
+        <div className="flex items-center gap-2">
+          {summary.flakyHiddenCount > 0 || showFlaky ? (
+            <Link
+              href={`/runs/${id}/diff?base=${encodeURIComponent(baseQuery)}&showFlaky=${showFlaky ? '0' : '1'}`}
+              className={cn(
+                'rounded border px-3 py-1.5 text-xs',
+                showFlaky
+                  ? 'border-warn/50 text-warn hover:border-warn'
+                  : 'border-line text-ink-muted hover:border-accent hover:text-accent',
+              )}
+            >
+              {showFlaky ? 'Hide flaky' : `Show flaky (${summary.flakyHiddenCount})`}
+            </Link>
+          ) : null}
+          <Link
+            href={`/runs/${id}`}
+            className="rounded border border-line px-3 py-1.5 text-xs text-ink-muted hover:border-accent hover:text-accent"
+          >
+            ← graph view
+          </Link>
+        </div>
       </div>
 
-      <div className="mb-4 grid grid-cols-5 gap-3 text-xs">
+      <div className="mb-4 grid grid-cols-6 gap-3 text-xs">
         <SummaryCard label="base 総ページ数" value={summary.baseTotal} />
         <SummaryCard label="target 総ページ数" value={summary.targetTotal} />
         <SummaryCard
@@ -81,6 +98,7 @@ export default async function DiffPage({
           tone={summary.removedCount > 0 ? 'bad' : 'mute'}
         />
         <SummaryCard label="共通ページ" value={summary.commonCount} />
+        <SummaryCard label="flaky hidden" value={summary.flakyHiddenCount} tone="warn" />
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -112,14 +130,20 @@ function SummaryCard({
 }: {
   label: string;
   value: number;
-  tone?: 'accent' | 'bad' | 'mute';
+  tone?: 'accent' | 'bad' | 'warn' | 'mute';
 }) {
   return (
     <div className="rounded border border-line bg-bg-subtle px-3 py-2">
       <div
         className={cn(
           'font-mono text-lg',
-          tone === 'accent' ? 'text-accent' : tone === 'bad' ? 'text-bad' : 'text-ink',
+          tone === 'accent'
+            ? 'text-accent'
+            : tone === 'bad'
+              ? 'text-bad'
+              : tone === 'warn'
+                ? 'text-warn'
+                : 'text-ink',
         )}
       >
         {value}
@@ -174,6 +198,11 @@ function DiffSection({
                     <span className="rounded bg-bg-panel px-1.5 py-0.5">depth {p.depth}</span>
                     {errSum > 0 && (
                       <span className="rounded bg-bad/15 px-1.5 py-0.5 text-bad">{errSum} err</span>
+                    )}
+                    {p.flaky && (
+                      <span className="rounded bg-warn/15 px-1.5 py-0.5 text-warn">
+                        flaky {p.stabilityScore == null ? '' : p.stabilityScore.toFixed(2)}
+                      </span>
                     )}
                   </div>
                   <div className="mt-1 truncate font-medium text-ink hover:text-accent">

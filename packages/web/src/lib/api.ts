@@ -8,6 +8,7 @@ import type {
   RunLaunchInput,
   RunLaunchResponse,
   RunSummary,
+  ScreenStability,
 } from '@testworker/shared';
 
 const SERVER_BASE = process.env.API_BASE_URL ?? 'http://api:3001';
@@ -117,8 +118,15 @@ export const fetchRunErrors = (runId: string, init?: RequestInit) =>
 export const fetchRunDiff = (
   runId: string,
   base: string | 'previous' = 'previous',
+  showFlaky = false,
   init?: RequestInit,
-) => get<RunDiff>(`/runs/${runId}/diff?base=${encodeURIComponent(base)}`, init);
+) =>
+  get<RunDiff>(
+    `/runs/${runId}/diff?base=${encodeURIComponent(base)}&showFlaky=${showFlaky ? '1' : '0'}`,
+    init,
+  );
+export const fetchScreenStability = (navHash: string, init?: RequestInit) =>
+  get<ScreenStability>(`/screens/${encodeURIComponent(navHash)}/stability`, init);
 
 // 常に CLIENT_BASE (ブラウザ到達可能な URL) を使う。
 // SSR 時にもこの URL を生成して HTML にシリアライズすることで、 ブラウザが直接

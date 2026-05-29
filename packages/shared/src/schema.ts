@@ -204,6 +204,18 @@ export const ScreenState = z.object({
 });
 export type ScreenState = z.infer<typeof ScreenState>;
 
+export const ScreenStability = z.object({
+  navHash: z.string(),
+  origin: z.string(),
+  score: z.number().min(0).max(1),
+  sampleCount: z.number().int().min(0),
+  distinctHashCount: z.number().int().min(0),
+  threshold: z.number().min(0).max(1),
+  flaky: z.boolean(),
+  computedAt: z.string(),
+});
+export type ScreenStability = z.infer<typeof ScreenStability>;
+
 export const PageState = z.object({
   id: z.string(),
   runId: z.string(),
@@ -221,6 +233,11 @@ export const PageState = z.object({
   consoleErrorCount: z.number().int().min(0).default(0),
   networkErrorCount: z.number().int().min(0).default(0),
   metrics: PageMetrics.default({}),
+  screenId: z.string().nullable().optional(),
+  navHash: z.string().nullable().optional(),
+  structureHash: z.string().nullable().optional(),
+  stabilityScore: z.number().min(0).max(1).nullable().optional(),
+  flaky: z.boolean().optional(),
 });
 export type PageState = z.infer<typeof PageState>;
 
@@ -378,6 +395,9 @@ export const RunDiffPage = z.object({
   url: z.string(),
   title: z.string(),
   signature: z.string(),
+  navHash: z.string().nullable().optional(),
+  stabilityScore: z.number().min(0).max(1).nullable().optional(),
+  flaky: z.boolean().optional(),
   depth: z.number().int(),
   errorCount: z.number().int(),
   consoleErrorCount: z.number().int(),
@@ -400,6 +420,8 @@ export const RunDiff = z.object({
     newCount: z.number().int(),
     removedCount: z.number().int(),
     commonCount: z.number().int(),
+    flakyHiddenCount: z.number().int().min(0).default(0),
+    showFlaky: z.boolean().default(false),
   }),
 });
 export type RunDiff = z.infer<typeof RunDiff>;

@@ -18,6 +18,7 @@ import type {
   RunSummary,
   Screen,
   ScreenState,
+  ScreenStability,
   StateGraphPayload,
   RunConsoleError,
 } from '@testworker/shared';
@@ -91,6 +92,22 @@ interface ScreenStateRow {
   arrival_trigger: string | null;
   arrival_selector: string | null;
 }
+
+interface PageV2Meta {
+  screenId: string;
+  navHash: string;
+  structureHash: string;
+  stability: ScreenStability | null;
+}
+
+export interface StabilityOptions {
+  origin?: string;
+  windowSize?: number;
+  threshold?: number;
+}
+
+const DEFAULT_STABILITY_WINDOW = 5;
+const DEFAULT_STABILITY_THRESHOLD = 0.5;
 
 // 各 field を個別に safeParse し、 valid なものだけ拾う。 1 field が invalid なときに
 // 他の有効な field まで defaults に倒すのを防ぐ (Issue #66)。
@@ -195,7 +212,7 @@ export function getRun(db: Database.Database, runId: string): Run | null {
   return rowToRun(row);
 }
 
-function rowToPage(row: PageRow): PageState {
+function rowToPage(row: PageRow, meta?: PageV2Meta): PageState {
   return {
     id: row.id,
     runId: row.run_id,
@@ -210,6 +227,11 @@ function rowToPage(row: PageRow): PageState {
     consoleErrorCount: row.console_error_count,
     networkErrorCount: row.network_error_count,
     metrics: parsePageMetrics(row.metrics_json),
+    screenId: meta?.screenId ?? null,
+    navHash: meta?.navHash ?? null,
+    structureHash: meta?.structureHash ?? null,
+    stabilityScore: meta?.stability?.score ?? null,
+    flaky: meta?.stability?.flaky ?? false,
   };
 }
 
@@ -258,6 +280,144 @@ function tableExists(db: Database.Database, tableName: string): boolean {
   return row !== undefined;
 }
 
+function originOf(rawUrl: string): string | null {
+  try {
+    return new URL(rawUrl).origin;
+  } catch {
+    return null;
+  }
+}
+
+export function scoreScreenStability(
+  hashes: string[],
+  opts: Pick<StabilityOptions, 'threshold'> & { sampleCount?: number } = {},
+): Pick<ScreenStability, 'score' | 'sampleCount' | 'distinctHashCount' | 'threshold' | 'flaky'> {
+  const sampleCount = opts.sampleCount ?? hashes.length;
+  const distinctHashCount = new Set(hashes).size;
+  const threshold = opts.threshold ?? DEFAULT_STABILITY_THRESHOLD;
+  const score = sampleCount < 2 ? 1 : Math.max(0, 1 - (distinctHashCount - 1) / (sampleCount - 1));
+  return {
+    score,
+    sampleCount,
+    distinctHashCount,
+    threshold,
+    flaky: sampleCount >= 2 && score < threshold,
+  };
+}
+
+function upsertScreenStability(db: Database.Database, stability: ScreenStability): void {
+  if (!tableExists(db, 'screen_stability')) return;
+  try {
+    db.prepare(
+      `INSERT INTO screen_stability (
+         origin, screen_nav_hash, score, sample_count, distinct_hash_count,
+         threshold, flaky, computed_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(origin, screen_nav_hash) DO UPDATE SET
+         score = excluded.score,
+         sample_count = excluded.sample_count,
+         distinct_hash_count = excluded.distinct_hash_count,
+         threshold = excluded.threshold,
+         flaky = excluded.flaky,
+         computed_at = excluded.computed_at`,
+    ).run(
+      stability.origin,
+      stability.navHash,
+      stability.score,
+      stability.sampleCount,
+      stability.distinctHashCount,
+      stability.threshold,
+      stability.flaky ? 1 : 0,
+      stability.computedAt,
+    );
+  } catch (err) {
+    if ((err as { code?: string }).code !== 'SQLITE_READONLY') throw err;
+  }
+}
+
+export function getScreenStability(
+  db: Database.Database,
+  navHash: string,
+  opts: StabilityOptions = {},
+): ScreenStability | null {
+  if (!tableExists(db, 'screens') || !tableExists(db, 'screen_states')) return null;
+  const windowSize = opts.windowSize ?? DEFAULT_STABILITY_WINDOW;
+  const rows = db
+    .prepare(
+      `SELECT r.id AS run_id, r.started_at, r.start_url, sc.url, st.structure_hash
+       FROM screens sc
+       JOIN runs r ON r.id = sc.run_id
+       JOIN screen_states st ON st.screen_id = sc.id
+       WHERE sc.nav_hash = ?
+       ORDER BY r.started_at DESC`,
+    )
+    .all(navHash) as Array<{
+    run_id: string;
+    started_at: string;
+    start_url: string;
+    url: string;
+    structure_hash: string;
+  }>;
+  if (rows.length === 0) return null;
+
+  const inferredOrigin = opts.origin ?? originOf(rows[0]!.url) ?? originOf(rows[0]!.start_url);
+  if (!inferredOrigin) return null;
+
+  const byRun = new Map<string, string[]>();
+  for (const row of rows) {
+    const rowOrigin = originOf(row.url) ?? originOf(row.start_url);
+    if (rowOrigin !== inferredOrigin) continue;
+    if (!byRun.has(row.run_id)) byRun.set(row.run_id, []);
+    byRun.get(row.run_id)!.push(row.structure_hash);
+  }
+
+  const recentRunIds = Array.from(byRun.keys()).slice(0, windowSize);
+  if (recentRunIds.length === 0) return null;
+  const hashes = recentRunIds.flatMap((runId) => Array.from(new Set(byRun.get(runId)!)).sort());
+  const scored = scoreScreenStability(hashes, { ...opts, sampleCount: recentRunIds.length });
+  const stability: ScreenStability = {
+    navHash,
+    origin: inferredOrigin,
+    ...scored,
+    computedAt: new Date().toISOString(),
+  };
+  upsertScreenStability(db, stability);
+  return stability;
+}
+
+function pageV2MetaByPageId(db: Database.Database, pages: PageRow[]): Map<string, PageV2Meta> {
+  const out = new Map<string, PageV2Meta>();
+  if (pages.length === 0 || !tableExists(db, 'screens') || !tableExists(db, 'screen_states')) {
+    return out;
+  }
+  const ids = pages.map((p) => p.id);
+  const placeholders = ids.map(() => '?').join(', ');
+  const rows = db
+    .prepare(
+      `SELECT st.id AS page_state_id, st.screen_id, st.structure_hash,
+              sc.nav_hash, sc.url
+       FROM screen_states st
+       JOIN screens sc ON sc.id = st.screen_id
+       WHERE st.id IN (${placeholders})`,
+    )
+    .all(...ids) as Array<{
+    page_state_id: string;
+    screen_id: string;
+    structure_hash: string;
+    nav_hash: string;
+    url: string;
+  }>;
+  for (const row of rows) {
+    out.set(row.page_state_id, {
+      screenId: row.screen_id,
+      navHash: row.nav_hash,
+      structureHash: row.structure_hash,
+      stability: getScreenStability(db, row.nav_hash, { origin: originOf(row.url) ?? undefined }),
+    });
+  }
+  return out;
+}
+
 export function listRuns(db: Database.Database): RunSummary[] {
   const rows = db
     .prepare(`SELECT * FROM runs ORDER BY started_at DESC LIMIT 200`)
@@ -285,9 +445,9 @@ export function listRuns(db: Database.Database): RunSummary[] {
 export function getGraph(db: Database.Database, runId: string): GraphPayload | null {
   const runRow = db.prepare(`SELECT * FROM runs WHERE id = ?`).get(runId) as RunRow | undefined;
   if (!runRow) return null;
-  const pages = (
-    db.prepare(`SELECT * FROM page_states WHERE run_id = ?`).all(runId) as PageRow[]
-  ).map(rowToPage);
+  const pageRows = db.prepare(`SELECT * FROM page_states WHERE run_id = ?`).all(runId) as PageRow[];
+  const pageMeta = pageV2MetaByPageId(db, pageRows);
+  const pages = pageRows.map((row) => rowToPage(row, pageMeta.get(row.id)));
   const edges = (db.prepare(`SELECT * FROM edges WHERE run_id = ?`).all(runId) as EdgeRow[]).map(
     rowToEdge,
   );
@@ -339,7 +499,7 @@ export function getPageDetail(db: Database.Database, pageStateId: string): PageD
     | PageRow
     | undefined;
   if (!pageRow) return null;
-  const page = rowToPage(pageRow);
+  const page = rowToPage(pageRow, pageV2MetaByPageId(db, [pageRow]).get(pageRow.id));
   const consoleRows = db
     .prepare(`SELECT * FROM console_entries WHERE page_state_id = ? ORDER BY timestamp`)
     .all(pageStateId) as Array<{
@@ -638,12 +798,15 @@ export function getRunErrors(db: Database.Database, runId: string): RunErrorsPay
   };
 }
 
-function rowToDiffPage(r: PageRow): RunDiffPage {
+function rowToDiffPage(r: PageRow, meta?: PageV2Meta): RunDiffPage {
   return {
     pageStateId: r.id,
     url: r.url,
     title: r.title,
     signature: r.signature,
+    navHash: meta?.navHash ?? null,
+    stabilityScore: meta?.stability?.score ?? null,
+    flaky: meta?.stability?.flaky ?? false,
     depth: r.depth,
     errorCount: r.error_count,
     consoleErrorCount: r.console_error_count,
@@ -675,6 +838,7 @@ export function getRunDiff(
   db: Database.Database,
   baseRunId: string,
   targetRunId: string,
+  opts: { showFlaky?: boolean } = {},
 ): RunDiff | null {
   const baseRow = db.prepare(`SELECT id FROM runs WHERE id = ?`).get(baseRunId) as
     | { id: string }
@@ -690,6 +854,8 @@ export function getRunDiff(
   const targetPages = db
     .prepare(`SELECT * FROM page_states WHERE run_id = ?`)
     .all(targetRunId) as PageRow[];
+  const baseMeta = pageV2MetaByPageId(db, basePages);
+  const targetMeta = pageV2MetaByPageId(db, targetPages);
 
   const baseBySig = new Map<string, PageRow>();
   for (const p of basePages) baseBySig.set(p.signature, p);
@@ -699,12 +865,13 @@ export function getRunDiff(
   const newPages: RunDiffPage[] = [];
   const commonPages: RunDiffPage[] = [];
   for (const [sig, p] of targetBySig.entries()) {
-    if (baseBySig.has(sig)) commonPages.push(rowToDiffPage(p));
-    else newPages.push(rowToDiffPage(p));
+    const page = rowToDiffPage(p, targetMeta.get(p.id));
+    if (baseBySig.has(sig)) commonPages.push(page);
+    else newPages.push(page);
   }
   const removedPages: RunDiffPage[] = [];
   for (const [sig, p] of baseBySig.entries()) {
-    if (!targetBySig.has(sig)) removedPages.push(rowToDiffPage(p));
+    if (!targetBySig.has(sig)) removedPages.push(rowToDiffPage(p, baseMeta.get(p.id)));
   }
   const byImpact = (a: RunDiffPage, b: RunDiffPage) =>
     b.errorCount +
@@ -716,19 +883,27 @@ export function getRunDiff(
   newPages.sort(byImpact);
   removedPages.sort(byImpact);
   commonPages.sort(byImpact);
+  const allChanged = [...newPages, ...removedPages];
+  const flakyHiddenCount = opts.showFlaky ? 0 : allChanged.filter((page) => page.flaky).length;
+  const visibleNewPages = opts.showFlaky ? newPages : newPages.filter((page) => !page.flaky);
+  const visibleRemovedPages = opts.showFlaky
+    ? removedPages
+    : removedPages.filter((page) => !page.flaky);
 
   return {
     baseRunId,
     targetRunId,
-    newPages,
-    removedPages,
+    newPages: visibleNewPages,
+    removedPages: visibleRemovedPages,
     commonPages,
     summary: {
       baseTotal: basePages.length,
       targetTotal: targetPages.length,
-      newCount: newPages.length,
-      removedCount: removedPages.length,
+      newCount: visibleNewPages.length,
+      removedCount: visibleRemovedPages.length,
       commonCount: commonPages.length,
+      flakyHiddenCount,
+      showFlaky: opts.showFlaky ?? false,
     },
   };
 }
