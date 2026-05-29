@@ -1,7 +1,15 @@
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Db } from './client.js';
-import { insertEdge, insertRun, updateRunStatus, upsertPageState } from './repo.js';
+import {
+  findScreenStateByIdentity,
+  insertEdge,
+  insertRun,
+  updateRunStatus,
+  upsertPageState,
+  upsertScreen,
+  upsertScreenState,
+} from './repo.js';
 
 let db: Db;
 
@@ -41,11 +49,35 @@ beforeEach(() => {
     );
     CREATE UNIQUE INDEX uniq_page_states_run_signature ON page_states(run_id, signature);
 
+    CREATE TABLE screens (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+      url TEXT NOT NULL,
+      pathname TEXT NOT NULL,
+      title TEXT NOT NULL,
+      nav_hash TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX uniq_screens_run_nav_hash ON screens(run_id, nav_hash);
+
+    CREATE TABLE screen_states (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+      screen_id TEXT NOT NULL REFERENCES screens(id) ON DELETE CASCADE,
+      structure_hash TEXT NOT NULL,
+      arrival_trigger TEXT,
+      arrival_selector TEXT
+    );
+    CREATE UNIQUE INDEX uniq_screen_states_run_screen_structure
+      ON screen_states(run_id, screen_id, structure_hash);
+
     CREATE TABLE edges (
       id TEXT PRIMARY KEY,
       run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
       from_page_state_id TEXT NOT NULL REFERENCES page_states(id) ON DELETE CASCADE,
       to_page_state_id TEXT NOT NULL REFERENCES page_states(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      from_state_id TEXT NOT NULL,
+      to_state_id TEXT NOT NULL,
       trigger TEXT NOT NULL,
       trigger_selector TEXT,
       trigger_text TEXT,
@@ -206,6 +238,9 @@ describe('graph repository writes', () => {
     insertEdge(db, {
       id: 'edge_a',
       runId: 'run_1',
+      fromStateId: 'from',
+      toStateId: 'to',
+      kind: 'nav',
       fromPageStateId: 'from',
       toPageStateId: 'to',
       trigger: 'link',
@@ -216,6 +251,9 @@ describe('graph repository writes', () => {
     insertEdge(db, {
       id: 'edge_b',
       runId: 'run_1',
+      fromStateId: 'from',
+      toStateId: 'to',
+      kind: 'nav',
       fromPageStateId: 'from',
       toPageStateId: 'to',
       trigger: 'link',
@@ -225,5 +263,41 @@ describe('graph repository writes', () => {
     });
 
     expect(db.$sqlite.prepare('SELECT id FROM edges').all()).toEqual([{ id: 'edge_a' }]);
+  });
+
+  it('deduplicates screen states by screen and structure hash', () => {
+    insertRun(db, run);
+    upsertScreen(db, {
+      id: 'sc_main',
+      runId: 'run_1',
+      url: 'https://example.com/docs',
+      pathname: '/docs',
+      title: 'Docs',
+      navHash: 'nav_a',
+    });
+    upsertScreenState(db, {
+      id: 'st_a',
+      runId: 'run_1',
+      screenId: 'sc_main',
+      structureHash: 'struct_a',
+      arrivalTrigger: 'initial',
+      arrivalSelector: null,
+    });
+    upsertScreenState(db, {
+      id: 'st_b',
+      runId: 'run_1',
+      screenId: 'sc_main',
+      structureHash: 'struct_a',
+      arrivalTrigger: 'click',
+      arrivalSelector: 'a.next',
+    });
+
+    expect(db.$sqlite.prepare('SELECT COUNT(*) AS count FROM screen_states').get()).toEqual({
+      count: 1,
+    });
+    expect(findScreenStateByIdentity(db, 'run_1', 'nav_a', 'struct_a')).toEqual({
+      id: 'st_a',
+      screenId: 'sc_main',
+    });
   });
 });

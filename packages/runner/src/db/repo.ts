@@ -1,11 +1,15 @@
 import type { Db } from './client.js';
 import type {
+  ArrivalTrigger,
   ConsoleEntry,
   Edge,
+  EdgeKind,
   NetworkEntry,
   PageError,
   PageState,
   Run,
+  Screen,
+  ScreenState,
 } from '@testworker/shared';
 
 export function insertRun(db: Db, run: Run): void {
@@ -104,6 +108,63 @@ export function upsertPageState(db: Db, page: PageState): void {
   );
 }
 
+export function upsertScreen(db: Db, screen: Screen): void {
+  const stmt = db.$sqlite.prepare(`
+    INSERT INTO screens (id, run_id, url, pathname, title, nav_hash)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(run_id, nav_hash) DO UPDATE SET
+      url = excluded.url,
+      pathname = excluded.pathname,
+      title = excluded.title
+  `);
+  stmt.run(screen.id, screen.runId, screen.url, screen.pathname, screen.title, screen.navHash);
+}
+
+export function upsertScreenState(db: Db, state: ScreenState): void {
+  const stmt = db.$sqlite.prepare(`
+    INSERT INTO screen_states (
+      id, run_id, screen_id, structure_hash, arrival_trigger, arrival_selector
+    ) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(run_id, screen_id, structure_hash) DO UPDATE SET
+      arrival_trigger = COALESCE(screen_states.arrival_trigger, excluded.arrival_trigger),
+      arrival_selector = COALESCE(screen_states.arrival_selector, excluded.arrival_selector)
+  `);
+  stmt.run(
+    state.id,
+    state.runId,
+    state.screenId,
+    state.structureHash,
+    state.arrivalTrigger,
+    state.arrivalSelector,
+  );
+}
+
+export function findScreenByNavHash(
+  db: Db,
+  runId: string,
+  navHash: string,
+): { id: string } | undefined {
+  return db.$sqlite
+    .prepare(`SELECT id FROM screens WHERE run_id = ? AND nav_hash = ?`)
+    .get(runId, navHash) as { id: string } | undefined;
+}
+
+export function findScreenStateByIdentity(
+  db: Db,
+  runId: string,
+  navHash: string,
+  structureHash: string,
+): { id: string; screenId: string } | undefined {
+  return db.$sqlite
+    .prepare(
+      `SELECT st.id, st.screen_id AS screenId
+       FROM screen_states st
+       JOIN screens sc ON sc.id = st.screen_id
+       WHERE st.run_id = ? AND sc.nav_hash = ? AND st.structure_hash = ?`,
+    )
+    .get(runId, navHash, structureHash) as { id: string; screenId: string } | undefined;
+}
+
 export function findPageStateBySignature(
   db: Db,
   runId: string,
@@ -118,20 +179,38 @@ export function findPageStateBySignature(
 export function insertEdge(db: Db, edge: Edge): void {
   const stmt = db.$sqlite.prepare(`
     INSERT OR IGNORE INTO edges (
-      id, run_id, from_page_state_id, to_page_state_id, trigger,
+      id, run_id, from_page_state_id, to_page_state_id, kind, from_state_id, to_state_id, trigger,
       trigger_selector, trigger_text, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run(
     edge.id,
     edge.runId,
     edge.fromPageStateId,
     edge.toPageStateId,
+    edge.kind,
+    edge.fromStateId,
+    edge.toStateId,
     edge.trigger,
     edge.triggerSelector,
     edge.triggerText,
     edge.createdAt,
   );
+}
+
+export function edgeKindForScreens(fromScreenId: string, toScreenId: string): EdgeKind {
+  return fromScreenId === toScreenId ? 'state' : 'nav';
+}
+
+export function arrivalTriggerFromNavigation(trigger: Edge['trigger']): ArrivalTrigger {
+  switch (trigger) {
+    case 'initial':
+      return 'initial';
+    case 'form-submit':
+      return 'submit';
+    default:
+      return 'click';
+  }
 }
 
 export function insertConsoleBatch(db: Db, entries: ConsoleEntry[]): void {

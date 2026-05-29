@@ -16,6 +16,9 @@ import type {
   RunErrorsPayload,
   RunNetworkError,
   RunSummary,
+  Screen,
+  ScreenState,
+  StateGraphPayload,
   RunConsoleError,
 } from '@testworker/shared';
 import { CrawlOptions, PageMetrics as PageMetricsSchema, log } from '@testworker/shared';
@@ -62,10 +65,31 @@ interface EdgeRow {
   run_id: string;
   from_page_state_id: string;
   to_page_state_id: string;
+  kind?: string | null;
+  from_state_id?: string | null;
+  to_state_id?: string | null;
   trigger: string;
   trigger_selector: string | null;
   trigger_text: string | null;
   created_at: string;
+}
+
+interface ScreenRow {
+  id: string;
+  run_id: string;
+  url: string;
+  pathname: string;
+  title: string;
+  nav_hash: string;
+}
+
+interface ScreenStateRow {
+  id: string;
+  run_id: string;
+  screen_id: string;
+  structure_hash: string;
+  arrival_trigger: string | null;
+  arrival_selector: string | null;
 }
 
 // 各 field を個別に safeParse し、 valid なものだけ拾う。 1 field が invalid なときに
@@ -193,6 +217,9 @@ function rowToEdge(row: EdgeRow): Edge {
   return {
     id: row.id,
     runId: row.run_id,
+    fromStateId: row.from_state_id ?? row.from_page_state_id,
+    toStateId: row.to_state_id ?? row.to_page_state_id,
+    kind: (row.kind ?? 'nav') as Edge['kind'],
     fromPageStateId: row.from_page_state_id,
     toPageStateId: row.to_page_state_id,
     trigger: row.trigger as Edge['trigger'],
@@ -200,6 +227,35 @@ function rowToEdge(row: EdgeRow): Edge {
     triggerText: row.trigger_text,
     createdAt: row.created_at,
   };
+}
+
+function rowToScreen(row: ScreenRow): Screen {
+  return {
+    id: row.id,
+    runId: row.run_id,
+    url: row.url,
+    pathname: row.pathname,
+    title: row.title,
+    navHash: row.nav_hash,
+  };
+}
+
+function rowToScreenState(row: ScreenStateRow): ScreenState {
+  return {
+    id: row.id,
+    runId: row.run_id,
+    screenId: row.screen_id,
+    structureHash: row.structure_hash,
+    arrivalTrigger: row.arrival_trigger as ScreenState['arrivalTrigger'],
+    arrivalSelector: row.arrival_selector,
+  };
+}
+
+function tableExists(db: Database.Database, tableName: string): boolean {
+  const row = db
+    .prepare(`SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = ?`)
+    .get(tableName) as { present: number } | undefined;
+  return row !== undefined;
 }
 
 export function listRuns(db: Database.Database): RunSummary[] {
@@ -236,6 +292,46 @@ export function getGraph(db: Database.Database, runId: string): GraphPayload | n
     rowToEdge,
   );
   return { run: rowToRun(runRow), pages, edges };
+}
+
+export function getStateGraph(db: Database.Database, runId: string): StateGraphPayload | null {
+  const runRow = db.prepare(`SELECT * FROM runs WHERE id = ?`).get(runId) as RunRow | undefined;
+  if (!runRow) return null;
+
+  const edges = (db.prepare(`SELECT * FROM edges WHERE run_id = ?`).all(runId) as EdgeRow[]).map(
+    rowToEdge,
+  );
+
+  if (tableExists(db, 'screens') && tableExists(db, 'screen_states')) {
+    const screens = (
+      db.prepare(`SELECT * FROM screens WHERE run_id = ?`).all(runId) as ScreenRow[]
+    ).map(rowToScreen);
+    const states = (
+      db.prepare(`SELECT * FROM screen_states WHERE run_id = ?`).all(runId) as ScreenStateRow[]
+    ).map(rowToScreenState);
+    if (screens.length > 0 || states.length > 0) {
+      return { run: rowToRun(runRow), screens, states, edges };
+    }
+  }
+
+  const pages = db.prepare(`SELECT * FROM page_states WHERE run_id = ?`).all(runId) as PageRow[];
+  const screens: Screen[] = pages.map((page) => ({
+    id: `sc_${page.id}`,
+    runId: page.run_id,
+    url: page.url,
+    pathname: page.url,
+    title: page.title,
+    navHash: `legacy:${page.signature}`,
+  }));
+  const states: ScreenState[] = pages.map((page) => ({
+    id: page.id,
+    runId: page.run_id,
+    screenId: `sc_${page.id}`,
+    structureHash: page.signature,
+    arrivalTrigger: 'initial',
+    arrivalSelector: null,
+  }));
+  return { run: rowToRun(runRow), screens, states, edges };
 }
 
 export function getPageDetail(db: Database.Database, pageStateId: string): PageDetail | null {
