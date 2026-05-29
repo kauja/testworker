@@ -13,6 +13,7 @@ import {
   getRun,
   getRunDiff,
   getRunErrors,
+  getScreenStability,
   getStateGraph,
   listRuns,
   previousRunOf,
@@ -241,6 +242,7 @@ app.get('/runs/:id/diff', (c) => {
   const db = ensureDb();
   if (!db) return c.json(DB_NOT_READY_BODY, 503);
   const target = c.req.param('id');
+  const showFlaky = c.req.query('showFlaky') === '1' || c.req.query('showFlaky') === 'true';
   // ?base=previous で「1 つ前の run」を自動選択。 startUrl が同じ run の中で
   // started_at が target より古い最新を base にする (Intent #125 / Issue #85)。
   let baseId = c.req.query('base');
@@ -249,9 +251,23 @@ app.get('/runs/:id/diff', (c) => {
     if (!prev) return c.json({ error: 'no_previous_run' }, 404);
     baseId = prev;
   }
-  const diff = getRunDiff(db, baseId, target);
+  const diff = getRunDiff(db, baseId, target, { showFlaky });
   if (!diff) return c.json({ error: 'not_found' }, 404);
   return c.json(diff);
+});
+
+app.get('/screens/:navHash/stability', (c) => {
+  const db = ensureDb();
+  if (!db) return c.json(DB_NOT_READY_BODY, 503);
+  const windowSize = Number(c.req.query('window') ?? 5);
+  const threshold = Number(c.req.query('threshold') ?? 0.5);
+  const stability = getScreenStability(db, c.req.param('navHash'), {
+    origin: c.req.query('origin'),
+    windowSize: Number.isFinite(windowSize) && windowSize > 0 ? windowSize : 5,
+    threshold: Number.isFinite(threshold) ? threshold : 0.5,
+  });
+  if (!stability) return c.json({ error: 'not_found' }, 404);
+  return c.json(stability);
 });
 
 app.get('/pages/:id', (c) => {

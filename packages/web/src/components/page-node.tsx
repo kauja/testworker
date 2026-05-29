@@ -47,6 +47,11 @@ export function PageNode({ data }: NodeProps<PageNodeType>) {
             {page.errorCount + page.consoleErrorCount + page.networkErrorCount}
           </div>
         )}
+        {page.flaky && (
+          <div className="absolute left-1.5 top-1.5 rounded bg-warn/90 px-1.5 py-0.5 font-mono text-[10px] text-bg">
+            flaky {page.stabilityScore == null ? '' : page.stabilityScore.toFixed(2)}
+          </div>
+        )}
       </div>
       <div className="px-3 py-2">
         <div className="truncate text-[12px] font-medium text-ink" title={page.title}>
