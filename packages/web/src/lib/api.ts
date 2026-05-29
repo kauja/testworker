@@ -4,6 +4,7 @@ import type {
   PageDetail,
   Run,
   RunDiff,
+  RunErrorsPayload,
   RunLaunchInput,
   RunLaunchResponse,
   RunSummary,
@@ -111,6 +112,8 @@ export const fetchPage = (pageId: string, init?: RequestInit) =>
   get<PageDetail>(`/pages/${pageId}`, init);
 export const fetchErrorGroups = (runId: string, init?: RequestInit) =>
   get<ErrorGroup[]>(`/runs/${runId}/errors/grouped`, init);
+export const fetchRunErrors = (runId: string, init?: RequestInit) =>
+  get<RunErrorsPayload>(`/runs/${runId}/errors`, init);
 export const fetchRunDiff = (
   runId: string,
   base: string | 'previous' = 'previous',

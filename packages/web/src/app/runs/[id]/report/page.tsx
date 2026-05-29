@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { fetchErrorGroups, fetchGraph } from '@/lib/api';
+import { fetchGraph, fetchRunErrors } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { PrintButton } from '@/components/print-button';
 import { TimeStamp } from '@/components/time-stamp';
@@ -17,10 +17,9 @@ import { computePageLabels } from '@/lib/page-label';
 export default async function ReportPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   let graph;
-  let errorGroups;
+  let errors;
   try {
-    graph = await fetchGraph(id);
-    errorGroups = await fetchErrorGroups(id);
+    [graph, errors] = await Promise.all([fetchGraph(id), fetchRunErrors(id)]);
   } catch {
     notFound();
   }
@@ -33,10 +32,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
   // 同 title 重複 (例: 全部 "testworker") を URL path で差別化 (#174)。
   const labels = computePageLabels(graph.pages);
 
-  const totalErrors = graph.pages.reduce(
-    (s, p) => s + p.errorCount + p.consoleErrorCount + p.networkErrorCount,
-    0,
-  );
+  const totalErrors = errors.totals.all;
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-6 print:max-w-full print:px-0 print:py-0">
@@ -67,9 +63,27 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
         <Counter label="edges" value={graph.edges.length} />
         <Counter label="total errors" value={totalErrors} tone={totalErrors > 0 ? 'bad' : 'mute'} />
         <Counter
-          label="error groups"
-          value={errorGroups.length}
-          tone={errorGroups.length > 0 ? 'bad' : 'mute'}
+          label="page error groups"
+          value={errors.pageErrorGroups.length}
+          tone={errors.pageErrorGroups.length > 0 ? 'bad' : 'mute'}
+        />
+      </section>
+
+      <section className="mb-6 grid grid-cols-3 gap-3 text-xs print:grid-cols-3">
+        <Counter
+          label="page errors"
+          value={errors.totals.pageErrors}
+          tone={errors.totals.pageErrors > 0 ? 'bad' : 'mute'}
+        />
+        <Counter
+          label="console errors"
+          value={errors.totals.consoleErrors}
+          tone={errors.totals.consoleErrors > 0 ? 'bad' : 'mute'}
+        />
+        <Counter
+          label="network errors"
+          value={errors.totals.networkErrors}
+          tone={errors.totals.networkErrors > 0 ? 'bad' : 'mute'}
         />
       </section>
 
@@ -174,15 +188,18 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
 
       <section>
         <h2 className="mb-2 text-sm font-medium uppercase tracking-wider text-ink-faint">
-          エラーグループ ({errorGroups.length})
+          Page error groups ({errors.pageErrorGroups.length})
         </h2>
-        {errorGroups.length === 0 ? (
+        {errors.pageErrorGroups.length === 0 ? (
           <p className="rounded border border-line bg-bg-subtle px-3 py-3 text-xs text-ink-muted">
-            このランではエラーは検出されませんでした。
+            pageerror / unhandledrejection / crash は検出されませんでした。
+            {errors.totals.consoleErrors + errors.totals.networkErrors > 0
+              ? ' console / network errors は上の内訳とページ一覧で確認できます。'
+              : ''}
           </p>
         ) : (
           <ul className="space-y-3">
-            {errorGroups.map((g) => (
+            {errors.pageErrorGroups.map((g) => (
               <li key={g.fingerprint} className="rounded border border-line bg-bg-subtle p-3">
                 <div className="flex items-center gap-2 text-[10px] text-ink-faint">
                   <span className="rounded bg-bad/15 px-1.5 py-0.5 font-mono text-bad">
