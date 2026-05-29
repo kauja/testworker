@@ -12,6 +12,7 @@ import {
   getPageDetail,
   getRun,
   getRunDiff,
+  getRunErrors,
   listRuns,
   previousRunOf,
 } from './queries.js';
@@ -217,6 +218,14 @@ app.get('/runs/:id/errors/grouped', (c) => {
   const groups = getErrorGroups(db, c.req.param('id'));
   if (groups == null) return c.json({ error: 'not_found' }, 404);
   return c.json(groups);
+});
+
+app.get('/runs/:id/errors', (c) => {
+  const db = ensureDb();
+  if (!db) return c.json(DB_NOT_READY_BODY, 503);
+  const errors = getRunErrors(db, c.req.param('id'));
+  if (errors == null) return c.json({ error: 'not_found' }, 404);
+  return c.json(errors);
 });
 
 app.get('/runs/:id/diff', (c) => {

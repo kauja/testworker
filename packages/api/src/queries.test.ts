@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import Database from 'better-sqlite3';
 import { log } from '@testworker/shared';
-import { pickValidOptionFields, rowToRun } from './queries.js';
+import { getRunErrors, pickValidOptionFields, rowToRun } from './queries.js';
 
 const baseRow = (options: unknown, overrides: Partial<Parameters<typeof rowToRun>[0]> = {}) => ({
   id: 'run_1',
@@ -112,5 +113,131 @@ describe('pickValidOptionFields', () => {
       sameOriginOnly: false,
       includeUrlPatterns: ['/ok'],
     });
+  });
+});
+
+describe('getRunErrors', () => {
+  it('returns page, console, and network errors with matching totals', () => {
+    const db = new Database(':memory:');
+    db.exec(`
+      CREATE TABLE runs (id TEXT PRIMARY KEY);
+      CREATE TABLE page_states (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        url TEXT NOT NULL,
+        title TEXT NOT NULL
+      );
+      CREATE TABLE page_errors (
+        id TEXT PRIMARY KEY,
+        page_state_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        message TEXT NOT NULL,
+        stack TEXT,
+        timestamp TEXT NOT NULL
+      );
+      CREATE TABLE console_entries (
+        id TEXT PRIMARY KEY,
+        page_state_id TEXT NOT NULL,
+        level TEXT NOT NULL,
+        text TEXT NOT NULL,
+        url TEXT,
+        line_number INTEGER,
+        timestamp TEXT NOT NULL
+      );
+      CREATE TABLE network_entries (
+        id TEXT PRIMARY KEY,
+        page_state_id TEXT NOT NULL,
+        method TEXT NOT NULL,
+        url TEXT NOT NULL,
+        status INTEGER,
+        status_text TEXT,
+        resource_type TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        duration_ms INTEGER,
+        from_cache INTEGER NOT NULL,
+        failed INTEGER NOT NULL,
+        failure_text TEXT
+      );
+    `);
+    db.prepare(`INSERT INTO runs (id) VALUES (?)`).run('run_1');
+    db.prepare(`INSERT INTO page_states (id, run_id, url, title) VALUES (?, ?, ?, ?)`).run(
+      'page_1',
+      'run_1',
+      'https://example.com',
+      'Home',
+    );
+    db.prepare(`INSERT INTO page_errors VALUES (?, ?, ?, ?, ?, ?)`).run(
+      'err_1',
+      'page_1',
+      'pageerror',
+      'boom',
+      null,
+      '2026-01-01T00:00:00.000Z',
+    );
+    db.prepare(`INSERT INTO console_entries VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+      'console_1',
+      'page_1',
+      'error',
+      'console boom',
+      'https://example.com/app.js',
+      10,
+      '2026-01-01T00:00:01.000Z',
+    );
+    db.prepare(`INSERT INTO console_entries VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+      'console_2',
+      'page_1',
+      'warn',
+      'not counted',
+      null,
+      null,
+      '2026-01-01T00:00:02.000Z',
+    );
+    db.prepare(`INSERT INTO network_entries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      'net_1',
+      'page_1',
+      'GET',
+      'https://example.com/missing.png',
+      404,
+      'Not Found',
+      'image',
+      '2026-01-01T00:00:03.000Z',
+      12,
+      0,
+      0,
+      null,
+    );
+    db.prepare(`INSERT INTO network_entries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      'net_2',
+      'page_1',
+      'GET',
+      'https://example.com/ok.png',
+      200,
+      'OK',
+      'image',
+      '2026-01-01T00:00:04.000Z',
+      8,
+      0,
+      0,
+      null,
+    );
+
+    const payload = getRunErrors(db, 'run_1');
+
+    expect(payload?.totals).toEqual({
+      pageErrors: 1,
+      consoleErrors: 1,
+      networkErrors: 1,
+      all: 3,
+    });
+    expect(payload?.pageErrorGroups).toHaveLength(1);
+    expect(payload?.consoleErrors[0]).toMatchObject({
+      text: 'console boom',
+      page: { pageStateId: 'page_1', title: 'Home' },
+    });
+    expect(payload?.networkErrors[0]).toMatchObject({
+      status: 404,
+      page: { pageStateId: 'page_1', title: 'Home' },
+    });
+    db.close();
   });
 });

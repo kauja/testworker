@@ -13,7 +13,10 @@ import type {
   Run,
   RunDiff,
   RunDiffPage,
+  RunErrorsPayload,
+  RunNetworkError,
   RunSummary,
+  RunConsoleError,
 } from '@testworker/shared';
 import { CrawlOptions, PageMetrics as PageMetricsSchema, log } from '@testworker/shared';
 
@@ -432,6 +435,111 @@ export function getErrorGroups(db: Database.Database, runId: string): ErrorGroup
   // 影響度の高い順 (count desc) で返す。 同 count は kind 順で安定化。
   out.sort((a, b) => b.count - a.count || (a.kind < b.kind ? -1 : 1));
   return out;
+}
+
+export function getRunErrors(db: Database.Database, runId: string): RunErrorsPayload | null {
+  const runRow = db.prepare(`SELECT id FROM runs WHERE id = ?`).get(runId) as
+    | { id: string }
+    | undefined;
+  if (!runRow) return null;
+
+  const pageErrorGroups = getErrorGroups(db, runId);
+  if (!pageErrorGroups) return null;
+  const pageErrors = pageErrorGroups.reduce((sum, group) => sum + group.count, 0);
+
+  const consoleRows = db
+    .prepare(
+      `SELECT c.id, c.page_state_id, c.level, c.text, c.url, c.line_number, c.timestamp,
+              p.url AS page_url, p.title AS page_title
+       FROM console_entries c
+       JOIN page_states p ON p.id = c.page_state_id
+       WHERE p.run_id = ? AND c.level = 'error'
+       ORDER BY c.timestamp`,
+    )
+    .all(runId) as Array<{
+    id: string;
+    page_state_id: string;
+    level: string;
+    text: string;
+    url: string | null;
+    line_number: number | null;
+    timestamp: string;
+    page_url: string;
+    page_title: string;
+  }>;
+  const consoleErrors: RunConsoleError[] = consoleRows.map((row) => ({
+    id: row.id,
+    pageStateId: row.page_state_id,
+    level: row.level as RunConsoleError['level'],
+    text: row.text,
+    url: row.url,
+    lineNumber: row.line_number,
+    timestamp: row.timestamp,
+    page: {
+      pageStateId: row.page_state_id,
+      url: row.page_url,
+      title: row.page_title,
+    },
+  }));
+
+  const networkRows = db
+    .prepare(
+      `SELECT n.id, n.page_state_id, n.method, n.url, n.status, n.status_text,
+              n.resource_type, n.started_at, n.duration_ms, n.from_cache, n.failed, n.failure_text,
+              p.url AS page_url, p.title AS page_title
+       FROM network_entries n
+       JOIN page_states p ON p.id = n.page_state_id
+       WHERE p.run_id = ? AND (n.failed = 1 OR COALESCE(n.status, 0) >= 400)
+       ORDER BY n.started_at`,
+    )
+    .all(runId) as Array<{
+    id: string;
+    page_state_id: string;
+    method: string;
+    url: string;
+    status: number | null;
+    status_text: string | null;
+    resource_type: string;
+    started_at: string;
+    duration_ms: number | null;
+    from_cache: number;
+    failed: number;
+    failure_text: string | null;
+    page_url: string;
+    page_title: string;
+  }>;
+  const networkErrors: RunNetworkError[] = networkRows.map((row) => ({
+    id: row.id,
+    pageStateId: row.page_state_id,
+    method: row.method,
+    url: row.url,
+    status: row.status,
+    statusText: row.status_text,
+    resourceType: row.resource_type,
+    startedAt: row.started_at,
+    durationMs: row.duration_ms,
+    fromCache: Boolean(row.from_cache),
+    failed: Boolean(row.failed),
+    failureText: row.failure_text,
+    page: {
+      pageStateId: row.page_state_id,
+      url: row.page_url,
+      title: row.page_title,
+    },
+  }));
+
+  return {
+    runId,
+    totals: {
+      pageErrors,
+      consoleErrors: consoleErrors.length,
+      networkErrors: networkErrors.length,
+      all: pageErrors + consoleErrors.length + networkErrors.length,
+    },
+    pageErrorGroups,
+    consoleErrors,
+    networkErrors,
+  };
 }
 
 function rowToDiffPage(r: PageRow): RunDiffPage {

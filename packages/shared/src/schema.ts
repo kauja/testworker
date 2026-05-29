@@ -296,6 +296,37 @@ export const ErrorGroup = z.object({
 });
 export type ErrorGroup = z.infer<typeof ErrorGroup>;
 
+const ErrorPageRef = z.object({
+  pageStateId: z.string(),
+  url: z.string(),
+  title: z.string(),
+});
+export type ErrorPageRef = z.infer<typeof ErrorPageRef>;
+
+export const RunConsoleError = ConsoleEntry.extend({
+  page: ErrorPageRef,
+});
+export type RunConsoleError = z.infer<typeof RunConsoleError>;
+
+export const RunNetworkError = NetworkEntry.extend({
+  page: ErrorPageRef,
+});
+export type RunNetworkError = z.infer<typeof RunNetworkError>;
+
+export const RunErrorsPayload = z.object({
+  runId: z.string(),
+  totals: z.object({
+    pageErrors: z.number().int().min(0),
+    consoleErrors: z.number().int().min(0),
+    networkErrors: z.number().int().min(0),
+    all: z.number().int().min(0),
+  }),
+  pageErrorGroups: z.array(ErrorGroup),
+  consoleErrors: z.array(RunConsoleError),
+  networkErrors: z.array(RunNetworkError),
+});
+export type RunErrorsPayload = z.infer<typeof RunErrorsPayload>;
+
 /**
  * 2 つの run の diff (Issue #85 / Intent #125)。
  *
