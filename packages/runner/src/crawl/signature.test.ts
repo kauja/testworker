@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import vm from 'node:vm';
 import type { Page } from 'playwright';
 import { describe, expect, it } from 'vitest';
-import { computeSignature, STRUCTURE_SCRIPT } from './signature.js';
+import { computeNavHash, computeSignature, NAV_SCRIPT, STRUCTURE_SCRIPT } from './signature.js';
 
 class FakeElement {
   readonly tagName: string;
@@ -18,6 +18,10 @@ class FakeElement {
   getAttribute(name: string): string | null {
     return this.attrs[name] ?? null;
   }
+
+  querySelectorAll(selector: string): FakeElement[] {
+    return flatten(this).filter((element) => matchesAny(element, selector));
+  }
 }
 
 const el = (tag: string, attrs: Record<string, string> = {}, children: FakeElement[] = []) =>
@@ -30,7 +34,13 @@ function flatten(root: FakeElement): FakeElement[] {
 function matches(element: FakeElement, selector: string): boolean {
   if (selector === '[role=main]') return element.getAttribute('role') === 'main';
   if (selector === '[role=navigation]') return element.getAttribute('role') === 'navigation';
+  if (selector === '[role=button]') return element.getAttribute('role') === 'button';
+  if (selector === '[role=link]') return element.getAttribute('role') === 'link';
   return element.tagName.toLowerCase() === selector;
+}
+
+function matchesAny(element: FakeElement, selector: string): boolean {
+  return selector.split(',').some((part) => matches(element, part.trim()));
 }
 
 function runStructureScript(body: FakeElement) {
@@ -52,6 +62,24 @@ function runStructureScript(body: FakeElement) {
     search: string;
     hash: string;
     scrollH: number;
+  };
+}
+
+function runNavScript(body: FakeElement, hash = '#intro') {
+  const all = flatten(body);
+  const context = {
+    Array,
+    Set,
+    document: {
+      body,
+      querySelectorAll: (selector: string) => all.filter((element) => matches(element, selector)),
+    },
+    location: { pathname: '/docs', search: '?q=1', hash },
+  };
+  return vm.runInNewContext(`(${NAV_SCRIPT})()`, context) as {
+    tokens: string;
+    pathname: string;
+    search: string;
   };
 }
 
@@ -108,17 +136,22 @@ describe('computeSignature', () => {
   it('combines URL pieces with a deterministic structure hash', async () => {
     const tokens = 'main[id=app]{button[data-testid=save]}';
     const expectedHash = createHash('sha1').update(tokens).digest('hex').slice(0, 16);
+    const navHash = createHash('sha1').update('/docs?q=1|').digest('hex').slice(0, 16);
     const page = {
       url: () => 'https://example.com/docs?q=1#intro',
       title: () => Promise.resolve('Docs'),
-      evaluate: () =>
-        Promise.resolve({
-          tokens,
-          pathname: '/docs',
-          search: '?q=1',
-          hash: '#intro',
-          scrollH: 1200,
-        }),
+      evaluate: (source: string) => {
+        if (source.includes('scrollH')) {
+          return Promise.resolve({
+            tokens,
+            pathname: '/docs',
+            search: '?q=1',
+            hash: '#intro',
+            scrollH: 1200,
+          });
+        }
+        return Promise.resolve({ tokens: '', pathname: '/docs', search: '?q=1' });
+      },
     } as unknown as Page;
 
     await expect(computeSignature(page)).resolves.toEqual({
@@ -126,7 +159,59 @@ describe('computeSignature', () => {
       url: 'https://example.com/docs?q=1#intro',
       pathname: '/docs',
       title: 'Docs',
+      navHash,
       structureHash: expectedHash,
     });
+  });
+
+  it('keeps hash-only SPA URL changes in the same nav hash', async () => {
+    const nav = el('body', {}, [
+      el('nav', { 'aria-label': 'Primary' }, [el('a', { name: 'home' })]),
+    ]);
+    const page = {
+      evaluate: () => Promise.resolve(runNavScript(nav, '#settings')),
+    } as unknown as Page;
+    const first = await computeNavHash(page);
+    const secondNav = runNavScript(nav, '#billing');
+    const second = createHash('sha1')
+      .update(`${secondNav.pathname}${secondNav.search}|${secondNav.tokens}`)
+      .digest('hex')
+      .slice(0, 16);
+
+    expect(first).toBe(second);
+  });
+
+  it('separates the same URL when navigation landmarks differ', async () => {
+    const first = runNavScript(el('body', {}, [el('nav', {}, [el('a', { name: 'home' })])]));
+    const second = runNavScript(el('body', {}, [el('nav', {}, [el('a', { name: 'billing' })])]));
+
+    const firstHash = createHash('sha1')
+      .update(`${first.pathname}${first.search}|${first.tokens}`)
+      .digest('hex')
+      .slice(0, 16);
+    const secondHash = createHash('sha1')
+      .update(`${second.pathname}${second.search}|${second.tokens}`)
+      .digest('hex')
+      .slice(0, 16);
+
+    expect(firstHash).not.toBe(secondHash);
+  });
+
+  it('separates same-screen states when body structure changes', async () => {
+    const buttonHash = createHash('sha1')
+      .update(
+        runStructureScript(el('body', {}, [el('main', {}, [el('button', { name: 'save' })])]))
+          .tokens,
+      )
+      .digest('hex')
+      .slice(0, 16);
+    const formHash = createHash('sha1')
+      .update(
+        runStructureScript(el('body', {}, [el('main', {}, [el('form', { name: 'save' })])])).tokens,
+      )
+      .digest('hex')
+      .slice(0, 16);
+
+    expect(buttonHash).not.toBe(formHash);
   });
 });

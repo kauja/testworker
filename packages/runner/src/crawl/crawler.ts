@@ -5,16 +5,23 @@ import {
   childLog,
   CrawlOptions,
   newEdgeId,
-  newPageStateId,
   newRunId,
+  newScreenId,
+  newScreenStateId,
   type Edge,
   type NavigationTrigger,
   type PageState,
   type Run,
+  type Screen,
+  type ScreenState,
 } from '@testworker/shared';
 import type { Db } from '../db/client.js';
 import { existsSync } from 'node:fs';
 import {
+  arrivalTriggerFromNavigation,
+  edgeKindForScreens,
+  findScreenByNavHash,
+  findScreenStateByIdentity,
   findPageStateBySignature,
   insertConsoleBatch,
   insertEdge,
@@ -25,6 +32,8 @@ import {
   updateRunProgress,
   updateRunStatus,
   upsertPageState,
+  upsertScreen,
+  upsertScreenState,
 } from '../db/repo.js';
 import { computeSignature } from './signature.js';
 import { collectInteractions, type Interaction } from './interactions.js';
@@ -49,6 +58,7 @@ export interface CrawlReport {
 
 interface Frontier {
   fromPageStateId: string | null;
+  fromScreenId: string | null;
   fromUrl: string | null;
   depth: number;
   url: string;
@@ -171,6 +181,7 @@ export async function runCrawl(
     const frontier: Frontier[] = [
       {
         fromPageStateId: null,
+        fromScreenId: null,
         fromUrl: null,
         depth: 0,
         url: options.startUrl,
@@ -253,9 +264,13 @@ export async function runCrawl(
       }
 
       const sig = await computeSignature(page);
-      const exists = findPageStateBySignature(db, runId, sig.signature);
+      const existingState = findScreenStateByIdentity(db, runId, sig.navHash, sig.structureHash);
+      const existingPage = findPageStateBySignature(db, runId, sig.signature);
+      const exists = existingState ?? existingPage;
       const isRevisit = exists !== undefined;
-      const pageStateId = exists?.id ?? newPageStateId();
+      const screenId =
+        existingState?.screenId ?? findScreenByNavHash(db, runId, sig.navHash)?.id ?? newScreenId();
+      const pageStateId = exists?.id ?? newScreenStateId();
 
       if (isRevisit) {
         // 同一 signature の再訪は upsertPageState の ON CONFLICT で error_count が
@@ -267,6 +282,12 @@ export async function runCrawl(
           const edge: Edge = {
             id: newEdgeId(),
             runId,
+            fromStateId: task.fromPageStateId,
+            toStateId: pageStateId,
+            kind:
+              task.fromScreenId && existingState
+                ? edgeKindForScreens(task.fromScreenId, existingState.screenId)
+                : 'nav',
             fromPageStateId: task.fromPageStateId,
             toPageStateId: pageStateId,
             trigger: task.trigger,
@@ -294,6 +315,26 @@ export async function runCrawl(
       const errCount = snap.errors.length;
       const metrics = options.captureWebVitals ? await collectWebVitals(page) : {};
 
+      const screen: Screen = {
+        id: screenId,
+        runId,
+        url: sig.url,
+        pathname: sig.pathname,
+        title: sig.title,
+        navHash: sig.navHash,
+      };
+      upsertScreen(db, screen);
+
+      const screenState: ScreenState = {
+        id: pageStateId,
+        runId,
+        screenId,
+        structureHash: sig.structureHash,
+        arrivalTrigger: arrivalTriggerFromNavigation(task.trigger),
+        arrivalSelector: task.triggerSelector,
+      };
+      upsertScreenState(db, screenState);
+
       const pageState: PageState = {
         id: pageStateId,
         runId,
@@ -320,6 +361,9 @@ export async function runCrawl(
         const edge: Edge = {
           id: newEdgeId(),
           runId,
+          fromStateId: task.fromPageStateId,
+          toStateId: pageStateId,
+          kind: task.fromScreenId ? edgeKindForScreens(task.fromScreenId, screenId) : 'nav',
           fromPageStateId: task.fromPageStateId,
           toPageStateId: pageStateId,
           trigger: task.trigger,
@@ -343,6 +387,7 @@ export async function runCrawl(
         frontierUrls.add(nextUrl);
         frontier.push({
           fromPageStateId: pageStateId,
+          fromScreenId: screenId,
           fromUrl: page.url(),
           depth: task.depth + 1,
           url: nextUrl,

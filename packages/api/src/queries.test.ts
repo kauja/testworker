@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import { log } from '@testworker/shared';
-import { getRunErrors, pickValidOptionFields, rowToRun } from './queries.js';
+import { getRunErrors, getStateGraph, pickValidOptionFields, rowToRun } from './queries.js';
 
 const baseRow = (options: unknown, overrides: Partial<Parameters<typeof rowToRun>[0]> = {}) => ({
   id: 'run_1',
@@ -238,6 +238,125 @@ describe('getRunErrors', () => {
       status: 404,
       page: { pageStateId: 'page_1', title: 'Home' },
     });
+    db.close();
+  });
+});
+
+describe('getStateGraph', () => {
+  it('returns v2 screens and states when the split schema is present', () => {
+    const db = new Database(':memory:');
+    db.exec(`
+      CREATE TABLE runs (
+        id TEXT PRIMARY KEY,
+        start_url TEXT NOT NULL,
+        status TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        options_json TEXT NOT NULL,
+        error_message TEXT,
+        pages_done INTEGER NOT NULL DEFAULT 0,
+        queue_size INTEGER,
+        current_url TEXT,
+        har_path TEXT
+      );
+      CREATE TABLE page_states (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        url TEXT NOT NULL,
+        title TEXT NOT NULL,
+        signature TEXT NOT NULL,
+        depth INTEGER NOT NULL,
+        visited_at TEXT NOT NULL,
+        screenshot_path TEXT,
+        viewport_w INTEGER NOT NULL,
+        viewport_h INTEGER NOT NULL,
+        error_count INTEGER NOT NULL DEFAULT 0,
+        console_error_count INTEGER NOT NULL DEFAULT 0,
+        network_error_count INTEGER NOT NULL DEFAULT 0,
+        metrics_json TEXT
+      );
+      CREATE TABLE screens (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        url TEXT NOT NULL,
+        pathname TEXT NOT NULL,
+        title TEXT NOT NULL,
+        nav_hash TEXT NOT NULL
+      );
+      CREATE TABLE screen_states (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        screen_id TEXT NOT NULL,
+        structure_hash TEXT NOT NULL,
+        arrival_trigger TEXT,
+        arrival_selector TEXT
+      );
+      CREATE TABLE edges (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        from_page_state_id TEXT NOT NULL,
+        to_page_state_id TEXT NOT NULL,
+        kind TEXT,
+        from_state_id TEXT,
+        to_state_id TEXT,
+        trigger TEXT NOT NULL,
+        trigger_selector TEXT,
+        trigger_text TEXT,
+        created_at TEXT NOT NULL
+      );
+    `);
+    db.prepare(`INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      'run_1',
+      'https://example.com',
+      'completed',
+      '2026-01-01T00:00:00.000Z',
+      null,
+      JSON.stringify({ startUrl: 'https://example.com' }),
+      null,
+      1,
+      0,
+      null,
+      null,
+    );
+    db.prepare(`INSERT INTO screens VALUES (?, ?, ?, ?, ?, ?)`).run(
+      'sc_1',
+      'run_1',
+      'https://example.com',
+      '/',
+      'Home',
+      'nav_a',
+    );
+    db.prepare(`INSERT INTO screen_states VALUES (?, ?, ?, ?, ?, ?)`).run(
+      'st_1',
+      'run_1',
+      'sc_1',
+      'struct_a',
+      'initial',
+      null,
+    );
+
+    const graph = getStateGraph(db, 'run_1');
+
+    expect(graph?.screens).toEqual([
+      {
+        id: 'sc_1',
+        runId: 'run_1',
+        url: 'https://example.com',
+        pathname: '/',
+        title: 'Home',
+        navHash: 'nav_a',
+      },
+    ]);
+    expect(graph?.states).toEqual([
+      {
+        id: 'st_1',
+        runId: 'run_1',
+        screenId: 'sc_1',
+        structureHash: 'struct_a',
+        arrivalTrigger: 'initial',
+        arrivalSelector: null,
+      },
+    ]);
     db.close();
   });
 });

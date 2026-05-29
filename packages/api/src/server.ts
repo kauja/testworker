@@ -13,6 +13,7 @@ import {
   getRun,
   getRunDiff,
   getRunErrors,
+  getStateGraph,
   listRuns,
   previousRunOf,
 } from './queries.js';
@@ -160,6 +161,14 @@ app.get('/runs/:id/graph', (c) => {
   const db = ensureDb();
   if (!db) return c.json(DB_NOT_READY_BODY, 503);
   const graph = getGraph(db, c.req.param('id'));
+  if (!graph) return c.json({ error: 'not_found' }, 404);
+  return c.json(graph);
+});
+
+app.get('/runs/:id/state-graph', (c) => {
+  const db = ensureDb();
+  if (!db) return c.json(DB_NOT_READY_BODY, 503);
+  const graph = getStateGraph(db, c.req.param('id'));
   if (!graph) return c.json({ error: 'not_found' }, 404);
   return c.json(graph);
 });

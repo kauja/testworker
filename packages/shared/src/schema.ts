@@ -178,6 +178,32 @@ export const PageMetrics = z.object({
 });
 export type PageMetrics = z.infer<typeof PageMetrics>;
 
+export const ArrivalTrigger = z.enum(['initial', 'click', 'submit', 'keypress', 'scroll']);
+export type ArrivalTrigger = z.infer<typeof ArrivalTrigger>;
+
+export const EdgeKind = z.enum(['nav', 'state']);
+export type EdgeKind = z.infer<typeof EdgeKind>;
+
+export const Screen = z.object({
+  id: z.string(),
+  runId: z.string(),
+  url: z.string().url(),
+  pathname: z.string(),
+  title: z.string(),
+  navHash: z.string(),
+});
+export type Screen = z.infer<typeof Screen>;
+
+export const ScreenState = z.object({
+  id: z.string(),
+  runId: z.string(),
+  screenId: z.string(),
+  structureHash: z.string(),
+  arrivalTrigger: ArrivalTrigger.nullable(),
+  arrivalSelector: z.string().nullable(),
+});
+export type ScreenState = z.infer<typeof ScreenState>;
+
 export const PageState = z.object({
   id: z.string(),
   runId: z.string(),
@@ -201,6 +227,9 @@ export type PageState = z.infer<typeof PageState>;
 export const Edge = z.object({
   id: z.string(),
   runId: z.string(),
+  fromStateId: z.string(),
+  toStateId: z.string(),
+  kind: EdgeKind,
   fromPageStateId: z.string(),
   toPageStateId: z.string(),
   trigger: NavigationTrigger,
@@ -262,6 +291,14 @@ export const GraphPayload = z.object({
   edges: z.array(Edge),
 });
 export type GraphPayload = z.infer<typeof GraphPayload>;
+
+export const StateGraphPayload = z.object({
+  run: Run,
+  screens: z.array(Screen),
+  states: z.array(ScreenState),
+  edges: z.array(Edge),
+});
+export type StateGraphPayload = z.infer<typeof StateGraphPayload>;
 
 export const PageDetail = z.object({
   page: PageState,
