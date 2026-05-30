@@ -8,6 +8,7 @@ import {
   getRunStateGraphDiff,
   getScreenStability,
   getStateGraph,
+  listApps,
   pickValidOptionFields,
   rowToRun,
   scoreScreenStability,
@@ -15,6 +16,7 @@ import {
 
 const baseRow = (options: unknown, overrides: Partial<Parameters<typeof rowToRun>[0]> = {}) => ({
   id: 'run_1',
+  app_id: null,
   start_url: 'https://example.com/start',
   status: 'completed',
   started_at: '2026-01-01T00:00:00.000Z',
@@ -33,6 +35,7 @@ function createStabilityDb(): Database.Database {
   db.exec(`
     CREATE TABLE runs (
       id TEXT PRIMARY KEY,
+      app_id TEXT,
       start_url TEXT NOT NULL,
       status TEXT NOT NULL,
       started_at TEXT NOT NULL,
@@ -111,8 +114,9 @@ function insertRunWithScreen(
   structureHash: string,
   signature = structureHash,
 ): void {
-  db.prepare(`INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+  db.prepare(`INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     runId,
+    null,
     'https://example.com',
     'completed',
     startedAt,
@@ -274,6 +278,104 @@ describe('rowToRun', () => {
   });
 });
 
+describe('listApps', () => {
+  it('groups runs under their app and exposes latest summary', () => {
+    const db = new Database(':memory:');
+    db.exec(`
+      CREATE TABLE apps (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        origin_spec TEXT NOT NULL UNIQUE,
+        entry_url TEXT NOT NULL,
+        defaults_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE runs (
+        id TEXT PRIMARY KEY,
+        app_id TEXT,
+        start_url TEXT NOT NULL,
+        status TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        options_json TEXT NOT NULL,
+        error_message TEXT,
+        pages_done INTEGER NOT NULL DEFAULT 0,
+        queue_size INTEGER,
+        current_url TEXT,
+        har_path TEXT
+      );
+      CREATE TABLE page_states (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        url TEXT NOT NULL,
+        title TEXT NOT NULL,
+        signature TEXT NOT NULL,
+        depth INTEGER NOT NULL,
+        visited_at TEXT NOT NULL,
+        screenshot_path TEXT,
+        viewport_w INTEGER NOT NULL,
+        viewport_h INTEGER NOT NULL,
+        error_count INTEGER NOT NULL DEFAULT 0,
+        console_error_count INTEGER NOT NULL DEFAULT 0,
+        network_error_count INTEGER NOT NULL DEFAULT 0,
+        metrics_json TEXT
+      );
+      CREATE TABLE edges (id TEXT PRIMARY KEY, run_id TEXT NOT NULL);
+    `);
+    db.prepare(`INSERT INTO apps VALUES (?, ?, ?, ?, ?, ?)`).run(
+      'app_1',
+      'example.com',
+      'https://example.com',
+      'https://example.com/start',
+      '{}',
+      '2026-01-01T00:00:00.000Z',
+    );
+    for (const [runId, startedAt] of [
+      ['run_old', '2026-01-01T00:00:00.000Z'],
+      ['run_new', '2026-01-02T00:00:00.000Z'],
+    ] as const) {
+      db.prepare(`INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        runId,
+        'app_1',
+        'https://example.com/start',
+        'completed',
+        startedAt,
+        null,
+        JSON.stringify({ startUrl: 'https://example.com/start' }),
+        null,
+        1,
+        0,
+        null,
+        null,
+      );
+    }
+    db.prepare(`INSERT INTO page_states VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      'page_1',
+      'run_new',
+      'https://example.com/start',
+      'Home',
+      'sig',
+      0,
+      '2026-01-02T00:00:00.000Z',
+      null,
+      1280,
+      800,
+      1,
+      2,
+      3,
+      '{}',
+    );
+
+    const apps = listApps(db);
+
+    expect(apps).toHaveLength(1);
+    expect(apps[0]!.runCount).toBe(2);
+    expect(apps[0]!.latestRun?.run.id).toBe('run_new');
+    expect(apps[0]!.totalErrorCount).toBe(6);
+    db.close();
+  });
+});
+
 describe('pickValidOptionFields', () => {
   it('drops invalid fields without discarding valid siblings', () => {
     expect(
@@ -427,6 +529,7 @@ describe('getStateGraph', () => {
     db.exec(`
       CREATE TABLE runs (
         id TEXT PRIMARY KEY,
+        app_id TEXT,
         start_url TEXT NOT NULL,
         status TEXT NOT NULL,
         started_at TEXT NOT NULL,
@@ -484,8 +587,9 @@ describe('getStateGraph', () => {
         created_at TEXT NOT NULL
       );
     `);
-    db.prepare(`INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    db.prepare(`INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       'run_1',
+      null,
       'https://example.com',
       'completed',
       '2026-01-01T00:00:00.000Z',

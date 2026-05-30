@@ -8,6 +8,7 @@ import { RunLaunchInput, log } from '@testworker/shared';
 import { openReadDb } from './db.js';
 import {
   getErrorGroups,
+  getAppDetail,
   getGraph,
   getPageDetail,
   getRun,
@@ -16,6 +17,7 @@ import {
   getRunStateGraphDiff,
   getScreenStability,
   getStateGraph,
+  listApps,
   listRuns,
   previousRunOf,
 } from './queries.js';
@@ -104,6 +106,8 @@ const CORS_ORIGIN: string | string[] = (() => {
 app.use('/health', cors({ origin: CORS_ORIGIN }));
 app.use('/runs', cors({ origin: CORS_ORIGIN }));
 app.use('/runs/*', cors({ origin: CORS_ORIGIN }));
+app.use('/apps', cors({ origin: CORS_ORIGIN }));
+app.use('/apps/*', cors({ origin: CORS_ORIGIN }));
 app.use('/pages/*', cors({ origin: CORS_ORIGIN }));
 
 app.get('/health', (c) => c.json({ ok: true, dbReady: dbInstance !== null }));
@@ -112,6 +116,77 @@ app.get('/runs', (c) => {
   const db = ensureDb();
   if (!db) return c.json(DB_NOT_READY_BODY, 503);
   return c.json(listRuns(db));
+});
+
+app.get('/apps', (c) => {
+  const db = ensureDb();
+  if (!db) return c.json(DB_NOT_READY_BODY, 503);
+  return c.json(listApps(db));
+});
+
+app.get('/apps/:id', (c) => {
+  const db = ensureDb();
+  if (!db) return c.json(DB_NOT_READY_BODY, 503);
+  const detail = getAppDetail(db, c.req.param('id'));
+  if (!detail) return c.json({ error: 'not_found' }, 404);
+  return c.json(detail);
+});
+
+app.post('/apps', async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid_json' }, 400);
+  }
+  const parsed = RunLaunchInput.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'invalid_run_options', issues: parsed.error.flatten() }, 400);
+  }
+  try {
+    launchCrawl(parsed.data);
+  } catch (err) {
+    return c.json(
+      { error: 'runner_launch_failed', message: err instanceof Error ? err.message : String(err) },
+      500,
+    );
+  }
+  return c.json(
+    { accepted: true, acceptedAt: new Date().toISOString(), options: parsed.data },
+    202,
+  );
+});
+
+app.post('/apps/:id/runs', async (c) => {
+  const db = ensureDb();
+  if (!db) return c.json(DB_NOT_READY_BODY, 503);
+  const detail = getAppDetail(db, c.req.param('id'));
+  if (!detail) return c.json({ error: 'not_found' }, 404);
+  let body: unknown = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
+  const parsed = RunLaunchInput.safeParse({
+    startUrl: detail.app.entryUrl,
+    ...(typeof body === 'object' && body !== null ? body : {}),
+  });
+  if (!parsed.success) {
+    return c.json({ error: 'invalid_run_options', issues: parsed.error.flatten() }, 400);
+  }
+  try {
+    launchCrawl(parsed.data);
+  } catch (err) {
+    return c.json(
+      { error: 'runner_launch_failed', message: err instanceof Error ? err.message : String(err) },
+      500,
+    );
+  }
+  return c.json(
+    { accepted: true, acceptedAt: new Date().toISOString(), options: parsed.data },
+    202,
+  );
 });
 
 app.post('/runs', async (c) => {

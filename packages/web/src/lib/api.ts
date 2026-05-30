@@ -1,4 +1,6 @@
 import type {
+  AppDetail,
+  AppSummary,
   ErrorGroup,
   GraphPayload,
   PageDetail,
@@ -105,6 +107,9 @@ async function post<T>(path: string, body: unknown, init?: RequestInit): Promise
 export const apiBase = base;
 
 export const fetchRuns = (init?: RequestInit) => get<RunSummary[]>('/runs', init);
+export const fetchApps = (init?: RequestInit) => get<AppSummary[]>('/apps', init);
+export const fetchApp = (appId: string, init?: RequestInit) =>
+  get<AppDetail>(`/apps/${appId}`, init);
 export const launchRun = (input: RunLaunchInput, init?: RequestInit) =>
   post<RunLaunchResponse>('/runs', input, init);
 export const fetchRun = (runId: string, init?: RequestInit) => get<Run>(`/runs/${runId}`, init);

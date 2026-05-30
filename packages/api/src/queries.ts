@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import type {
+  App,
+  AppDetail,
+  AppSummary,
   ConsoleEntry,
   Edge,
   ErrorGroup,
@@ -31,6 +34,7 @@ import { CrawlOptions, PageMetrics as PageMetricsSchema, log } from '@testworker
 
 interface RunRow {
   id: string;
+  app_id?: string | null;
   start_url: string;
   status: string;
   started_at: string;
@@ -47,6 +51,15 @@ interface RunRow {
   current_url: string | null;
   /** HAR ファイルへの DATA_DIR 相対パス (Issue #87)。 旧 run / 失敗 run では null。 */
   har_path: string | null;
+}
+
+interface AppRow {
+  id: string;
+  name: string;
+  origin_spec: string;
+  entry_url: string;
+  defaults_json: string;
+  created_at: string;
 }
 
 interface PageRow {
@@ -193,6 +206,7 @@ export function rowToRun(row: RunRow): Run {
   }
   return {
     id: row.id,
+    appId: row.app_id ?? null,
     startUrl: row.start_url,
     status: row.status as Run['status'],
     startedAt: row.started_at,
@@ -203,6 +217,26 @@ export function rowToRun(row: RunRow): Run {
     queueSize: row.queue_size,
     currentUrl: row.current_url,
     harPath: row.har_path ?? null,
+  };
+}
+
+function rowToApp(row: AppRow): App {
+  let defaults: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(row.defaults_json) as unknown;
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      defaults = parsed as Record<string, unknown>;
+    }
+  } catch {
+    defaults = {};
+  }
+  return {
+    id: row.id,
+    name: row.name,
+    originSpec: row.origin_spec,
+    entryUrl: row.entry_url,
+    defaults,
+    createdAt: row.created_at,
   };
 }
 
@@ -455,6 +489,69 @@ export function listRuns(db: Database.Database): RunSummary[] {
       errorCount: counts.errors,
     };
   });
+}
+
+function runSummaryForRow(db: Database.Database, row: RunRow): RunSummary {
+  const run = rowToRun(row);
+  const counts = db
+    .prepare(
+      `SELECT
+         (SELECT COUNT(*) FROM page_states WHERE run_id = ?) AS pages,
+         (SELECT COUNT(*) FROM edges WHERE run_id = ?) AS edges,
+         (SELECT COALESCE(SUM(error_count + console_error_count + network_error_count), 0)
+            FROM page_states WHERE run_id = ?) AS errors`,
+    )
+    .get(run.id, run.id, run.id) as { pages: number; edges: number; errors: number };
+  return {
+    run,
+    pageCount: counts.pages,
+    edgeCount: counts.edges,
+    errorCount: counts.errors,
+  };
+}
+
+export function listApps(db: Database.Database): AppSummary[] {
+  if (!tableExists(db, 'apps')) return [];
+  const apps = db
+    .prepare(`SELECT * FROM apps ORDER BY created_at DESC LIMIT 200`)
+    .all() as AppRow[];
+  return apps.map((row) => {
+    const latestRunRow = db
+      .prepare(`SELECT * FROM runs WHERE app_id = ? ORDER BY started_at DESC LIMIT 1`)
+      .get(row.id) as RunRow | undefined;
+    const counts = db
+      .prepare(
+        `SELECT
+           COUNT(*) AS runs,
+           COALESCE(SUM((
+             SELECT COALESCE(SUM(error_count + console_error_count + network_error_count), 0)
+             FROM page_states
+             WHERE page_states.run_id = runs.id
+           )), 0) AS errors
+         FROM runs
+         WHERE app_id = ?`,
+      )
+      .get(row.id) as { runs: number; errors: number };
+    return {
+      app: rowToApp(row),
+      latestRun: latestRunRow ? runSummaryForRow(db, latestRunRow) : null,
+      runCount: counts.runs,
+      totalErrorCount: counts.errors,
+    };
+  });
+}
+
+export function getAppDetail(db: Database.Database, appId: string): AppDetail | null {
+  if (!tableExists(db, 'apps')) return null;
+  const appRow = db.prepare(`SELECT * FROM apps WHERE id = ?`).get(appId) as AppRow | undefined;
+  if (!appRow) return null;
+  const runRows = db
+    .prepare(`SELECT * FROM runs WHERE app_id = ? ORDER BY started_at DESC LIMIT 50`)
+    .all(appId) as RunRow[];
+  return {
+    app: rowToApp(appRow),
+    runs: runRows.map((row) => runSummaryForRow(db, row)),
+  };
 }
 
 export function getGraph(db: Database.Database, runId: string): GraphPayload | null {

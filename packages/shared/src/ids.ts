@@ -12,6 +12,7 @@ function randomId(prefix: string, size = 12): string {
 }
 
 export const newRunId = () => randomId('run');
+export const newAppId = () => randomId('app');
 export const newScreenId = () => randomId('sc');
 export const newScreenStateId = () => randomId('st');
 export const newPageStateId = () => randomId('ps');

@@ -1,5 +1,7 @@
 import type { Db } from './client.js';
+import { createHash } from 'node:crypto';
 import type {
+  App,
   ArrivalTrigger,
   ConsoleEntry,
   Edge,
@@ -12,13 +14,71 @@ import type {
   ScreenState,
 } from '@testworker/shared';
 
+function appIdForOrigin(origin: string): string {
+  return `app_${createHash('sha1').update(origin).digest('hex').slice(0, 12)}`;
+}
+
+function originOf(rawUrl: string): string {
+  try {
+    return new URL(rawUrl).origin;
+  } catch {
+    return rawUrl;
+  }
+}
+
+function appNameForOrigin(origin: string): string {
+  try {
+    return new URL(origin).host || origin;
+  } catch {
+    return origin;
+  }
+}
+
+function tableExists(db: Db, tableName: string): boolean {
+  return (
+    db.$sqlite
+      .prepare(`SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = ?`)
+      .get(tableName) !== undefined
+  );
+}
+
+export function upsertAppForRun(db: Db, run: Pick<Run, 'startUrl' | 'startedAt'>): App | null {
+  if (!tableExists(db, 'apps')) return null;
+  const origin = originOf(run.startUrl);
+  const app: App = {
+    id: appIdForOrigin(origin),
+    name: appNameForOrigin(origin),
+    originSpec: origin,
+    entryUrl: run.startUrl,
+    defaults: {},
+    createdAt: run.startedAt,
+  };
+  db.$sqlite
+    .prepare(
+      `INSERT INTO apps (id, name, origin_spec, entry_url, defaults_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(origin_spec) DO UPDATE SET
+         entry_url = excluded.entry_url`,
+    )
+    .run(
+      app.id,
+      app.name,
+      app.originSpec,
+      app.entryUrl,
+      JSON.stringify(app.defaults),
+      app.createdAt,
+    );
+  return app;
+}
+
 export function insertRun(db: Db, run: Run): void {
+  const app = run.appId ? null : upsertAppForRun(db, run);
   const stmt = db.$sqlite.prepare(`
     INSERT INTO runs (
       id, start_url, status, started_at, finished_at, options_json, error_message,
-      pages_done, queue_size, current_url, har_path
+      pages_done, queue_size, current_url, har_path, app_id
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run(
     run.id,
@@ -32,6 +92,7 @@ export function insertRun(db: Db, run: Run): void {
     run.queueSize,
     run.currentUrl,
     run.harPath,
+    run.appId ?? app?.id ?? null,
   );
 }
 

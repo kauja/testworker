@@ -146,8 +146,19 @@ export const RunLaunchResponse = z.object({
 });
 export type RunLaunchResponse = z.infer<typeof RunLaunchResponse>;
 
+export const App = z.object({
+  id: z.string(),
+  name: z.string(),
+  originSpec: z.string(),
+  entryUrl: z.string(),
+  defaults: z.record(z.string(), z.unknown()).default({}),
+  createdAt: z.string(),
+});
+export type App = z.infer<typeof App>;
+
 export const Run = z.object({
   id: z.string(),
+  appId: z.string().nullable().default(null),
   startUrl: z.string(),
   status: RunStatus,
   startedAt: z.string(),
@@ -301,6 +312,20 @@ export const RunSummary = z.object({
   errorCount: z.number().int(),
 });
 export type RunSummary = z.infer<typeof RunSummary>;
+
+export const AppSummary = z.object({
+  app: App,
+  latestRun: RunSummary.nullable(),
+  runCount: z.number().int().min(0),
+  totalErrorCount: z.number().int().min(0),
+});
+export type AppSummary = z.infer<typeof AppSummary>;
+
+export const AppDetail = z.object({
+  app: App,
+  runs: z.array(RunSummary),
+});
+export type AppDetail = z.infer<typeof AppDetail>;
 
 export const GraphPayload = z.object({
   run: Run,
