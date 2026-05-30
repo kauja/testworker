@@ -132,6 +132,31 @@ app.get('/apps/:id', (c) => {
   return c.json(detail);
 });
 
+app.post('/apps', async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid_json' }, 400);
+  }
+  const parsed = RunLaunchInput.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'invalid_run_options', issues: parsed.error.flatten() }, 400);
+  }
+  try {
+    launchCrawl(parsed.data);
+  } catch (err) {
+    return c.json(
+      { error: 'runner_launch_failed', message: err instanceof Error ? err.message : String(err) },
+      500,
+    );
+  }
+  return c.json(
+    { accepted: true, acceptedAt: new Date().toISOString(), options: parsed.data },
+    202,
+  );
+});
+
 app.post('/apps/:id/runs', async (c) => {
   const db = ensureDb();
   if (!db) return c.json(DB_NOT_READY_BODY, 503);
