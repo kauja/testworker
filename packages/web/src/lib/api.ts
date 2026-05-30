@@ -113,6 +113,8 @@ export const fetchApp = (appId: string, init?: RequestInit) =>
   get<AppDetail>(`/apps/${appId}`, init);
 export const launchRun = (input: RunLaunchInput, init?: RequestInit) =>
   post<RunLaunchResponse>('/runs', input, init);
+export const launchApp = (input: RunLaunchInput, init?: RequestInit) =>
+  post<RunLaunchResponse>('/apps', input, init);
 export const fetchRun = (runId: string, init?: RequestInit) => get<Run>(`/runs/${runId}`, init);
 export const fetchGraph = (runId: string, init?: RequestInit) =>
   get<GraphPayload>(`/runs/${runId}/graph`, init);

@@ -19,6 +19,7 @@ export function buildRunnerCommand(options: RunLaunchInput): RunnerCommand {
       : splitArgs(process.env.TESTWORKER_RUNNER_ARGS ?? '');
 
   args.push('--url', options.startUrl);
+  if (options.appName) args.push('--app-name', options.appName);
   args.push('--max-depth', String(options.maxDepth));
   args.push('--max-pages', String(options.maxPages));
   if (options.originSpec) args.push('--origin-spec', JSON.stringify(options.originSpec));
@@ -40,6 +41,7 @@ export function buildRunnerCommand(options: RunLaunchInput): RunnerCommand {
     env: {
       ...process.env,
       START_URL: options.startUrl,
+      APP_NAME: options.appName ?? '',
       MAX_DEPTH: String(options.maxDepth),
       MAX_PAGES: String(options.maxPages),
       ORIGIN_SPEC_JSON: options.originSpec ? JSON.stringify(options.originSpec) : '',

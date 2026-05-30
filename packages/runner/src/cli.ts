@@ -17,6 +17,7 @@ async function main(): Promise<void> {
   const { values, positionals } = parseArgs({
     options: {
       url: { type: 'string' },
+      'app-name': { type: 'string' },
       'max-depth': { type: 'string' },
       'max-pages': { type: 'string' },
       'origin-spec': { type: 'string' },
@@ -59,6 +60,7 @@ async function main(): Promise<void> {
   const overrides = {
     ...base,
     startUrl,
+    ...(values['app-name'] ? { appName: values['app-name'] } : {}),
     ...(values['max-depth'] ? { maxDepth: Number(values['max-depth']) } : {}),
     ...(values['max-pages'] ? { maxPages: Number(values['max-pages']) } : {}),
     ...(values['origin-spec'] ? { originSpec: parseOriginSpec(values['origin-spec']) } : {}),

@@ -1,4 +1,5 @@
 import { createReadStream, existsSync, realpathSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { Readable } from 'node:stream';
 import { Hono } from 'hono';
@@ -82,6 +83,16 @@ const DB_NOT_READY_BODY = {
   hint: 'Database not initialized. Run `make migrate` (or `pnpm --filter @testworker/runner run db:migrate`).',
 } as const;
 
+function appIdForStartUrl(rawUrl: string): string {
+  let origin = rawUrl;
+  try {
+    origin = new URL(rawUrl).origin;
+  } catch {
+    origin = rawUrl;
+  }
+  return `app_${createHash('sha1').update(origin).digest('hex').slice(0, 12)}`;
+}
+
 void pollUntilDbReady();
 const app = new Hono();
 
@@ -154,7 +165,12 @@ app.post('/apps', async (c) => {
     );
   }
   return c.json(
-    { accepted: true, acceptedAt: new Date().toISOString(), options: parsed.data },
+    {
+      accepted: true,
+      acceptedAt: new Date().toISOString(),
+      appId: appIdForStartUrl(parsed.data.startUrl),
+      options: parsed.data,
+    },
     202,
   );
 });

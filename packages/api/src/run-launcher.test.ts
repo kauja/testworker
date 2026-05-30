@@ -5,6 +5,7 @@ describe('buildRunnerCommand', () => {
   it('builds a pnpm runner invocation with bounded crawl options', () => {
     const cmd = buildRunnerCommand({
       startUrl: 'https://example.com',
+      appName: 'Example App',
       maxDepth: 2,
       maxPages: 10,
       originSpec: {
@@ -34,6 +35,8 @@ describe('buildRunnerCommand', () => {
       'crawl',
       '--url',
       'https://example.com',
+      '--app-name',
+      'Example App',
       '--max-depth',
       '2',
       '--max-pages',
@@ -55,6 +58,7 @@ describe('buildRunnerCommand', () => {
       '--collect-storage',
     ]);
     expect(cmd.env.START_URL).toBe('https://example.com');
+    expect(cmd.env.APP_NAME).toBe('Example App');
     expect(cmd.env.ORIGIN_SPEC_JSON).toBe(
       '{"scheme":"any","host":{"mode":"exact","value":"example.com"},"port":"same","allowList":[],"blockList":[]}',
     );
