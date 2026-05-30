@@ -4,6 +4,7 @@ import { ApiError } from '@/lib/api';
 import { getApp, getGraph } from '@/lib/server-api';
 import { GraphView } from '@/components/graph-view';
 import { RunRouteProvider } from '@/components/run-route-context';
+import { SchedulePanel } from '@/components/schedule-panel';
 import { StopReasonBadge } from '@/components/stop-reason-badge';
 import { formatOriginSpec } from '@/lib/origin-spec';
 
@@ -28,6 +29,7 @@ export default async function AppPage({ params }: { params: Promise<{ id: string
             {formatOriginSpec(detail.app.originSpec)}
           </p>
         </div>
+        <SchedulePanel app={detail.app} />
         <div className="rounded-lg border border-line bg-bg-subtle px-6 py-10 text-center text-sm text-ink-muted">
           run snapshot がまだありません。
         </div>
@@ -42,7 +44,8 @@ export default async function AppPage({ params }: { params: Promise<{ id: string
           <StopReasonBadge reason={latest.run.stoppedReason} />
         </div>
       )}
-      <div className={latest.run.stoppedReason ? 'h-[calc(100%-3rem)]' : 'h-full'}>
+      <SchedulePanel app={detail.app} />
+      <div className={latest.run.stoppedReason ? 'h-[calc(100%-6rem)]' : 'h-[calc(100%-3rem)]'}>
         <RunRouteProvider run={latest.run}>
           <GraphView graph={graph} />
         </RunRouteProvider>

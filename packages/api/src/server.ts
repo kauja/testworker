@@ -5,7 +5,7 @@ import { Readable } from 'node:stream';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serve } from '@hono/node-server';
-import { RunLaunchInput, log } from '@testworker/shared';
+import { RunLaunchInput, Schedule, validateCronExpression, log } from '@testworker/shared';
 import { openReadDb } from './db.js';
 import {
   getErrorGroups,
@@ -22,8 +22,10 @@ import {
   listApps,
   listRuns,
   previousRunOf,
+  updateAppSchedule,
 } from './queries.js';
 import { launchCrawl } from './run-launcher.js';
+import { startAppScheduler } from './scheduler.js';
 
 const PORT = Number(process.env.API_PORT ?? 3001);
 const DB_PATH = process.env.DB_PATH ?? './data/db/testworker.sqlite';
@@ -96,6 +98,10 @@ function appIdForStartUrl(rawUrl: string): string {
 void pollUntilDbReady();
 const app = new Hono();
 
+if (process.env.DISABLE_APP_SCHEDULER !== '1') {
+  startAppScheduler({ getDb: ensureDb, launch: launchCrawl });
+}
+
 // CORS_ORIGIN 環境変数で許可 origin を制限する (Issue #103, defense in depth)。
 //   - 未設定 / `*` → wildcard (デフォルト、 dev 利便性)
 //   - CSV (例: `https://app.example.com,https://staging.example.com`) → allowlist
@@ -143,6 +149,38 @@ app.get('/apps/:id', (c) => {
   const detail = getAppDetail(db, c.req.param('id'));
   if (!detail) return c.json({ error: 'not_found' }, 404);
   return c.json(detail);
+});
+
+app.put('/apps/:id/schedule', async (c) => {
+  const db = ensureDb();
+  if (!db) return c.json(DB_NOT_READY_BODY, 503);
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid_json' }, 400);
+  }
+  const parsed = Schedule.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'invalid_schedule', issues: parsed.error.flatten() }, 400);
+  }
+  const validation = validateCronExpression(parsed.data.cron);
+  if (!validation.ok) {
+    return c.json({ error: 'invalid_cron', message: validation.error }, 400);
+  }
+  try {
+    const app = updateAppSchedule(db, c.req.param('id'), parsed.data);
+    if (!app) return c.json({ error: 'not_found' }, 404);
+    return c.json(app);
+  } catch (err) {
+    return c.json(
+      {
+        error: 'schedule_update_failed',
+        message: err instanceof Error ? err.message : String(err),
+      },
+      500,
+    );
+  }
 });
 
 app.post('/apps', async (c) => {
@@ -216,7 +254,9 @@ app.post('/runs', async (c) => {
     return c.json({ error: 'invalid_json' }, 400);
   }
 
-  const parsed = RunLaunchInput.safeParse(body);
+  const parsed = RunLaunchInput.safeParse(
+    typeof body === 'object' && body !== null ? { runOrigin: 'api', ...body } : body,
+  );
   if (!parsed.success) {
     return c.json({ error: 'invalid_run_options', issues: parsed.error.flatten() }, 400);
   }

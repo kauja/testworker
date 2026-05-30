@@ -13,6 +13,7 @@ import {
   pickValidOptionFields,
   rowToRun,
   scoreScreenStability,
+  updateAppSchedule,
 } from './queries.js';
 
 const baseRow = (options: unknown, overrides: Partial<Parameters<typeof rowToRun>[0]> = {}) => ({
@@ -373,6 +374,60 @@ describe('listApps', () => {
     expect(apps[0]!.runCount).toBe(2);
     expect(apps[0]!.latestRun?.run.id).toBe('run_new');
     expect(apps[0]!.totalErrorCount).toBe(6);
+    db.close();
+  });
+
+  it('updates and parses app schedule settings', () => {
+    const db = new Database(':memory:');
+    db.exec(`
+      CREATE TABLE apps (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        origin_spec TEXT NOT NULL UNIQUE,
+        entry_url TEXT NOT NULL,
+        defaults_json TEXT NOT NULL DEFAULT '{}',
+        schedule_json TEXT NOT NULL DEFAULT '{"enabled":false}',
+        last_scheduled_at TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE runs (
+        id TEXT PRIMARY KEY,
+        app_id TEXT,
+        start_url TEXT NOT NULL,
+        status TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        options_json TEXT NOT NULL,
+        error_message TEXT
+      );
+      CREATE TABLE page_states (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        error_count INTEGER NOT NULL DEFAULT 0,
+        console_error_count INTEGER NOT NULL DEFAULT 0,
+        network_error_count INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE edges (id TEXT PRIMARY KEY, run_id TEXT NOT NULL);
+    `);
+    db.prepare(
+      `INSERT INTO apps (id, name, origin_spec, entry_url, created_at)
+       VALUES ('app_1', 'Example', 'https://example.com', 'https://example.com', '2026-05-30T00:00:00.000Z')`,
+    ).run();
+
+    const app = updateAppSchedule(db, 'app_1', {
+      enabled: true,
+      cron: '*/5 * * * *',
+      timezone: 'UTC',
+      overrides: { maxDurationSec: 600, notifyOnDiff: true },
+      skipIfPreviousStillRunning: true,
+    });
+
+    expect(app?.schedule).toMatchObject({
+      enabled: true,
+      cron: '*/5 * * * *',
+      overrides: { maxDurationSec: 600, notifyOnDiff: true },
+    });
+    expect(listApps(db)[0]?.app.schedule.enabled).toBe(true);
     db.close();
   });
 });

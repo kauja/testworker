@@ -9,6 +9,7 @@ describe('buildRunnerCommand', () => {
       maxDepth: 2,
       maxPages: 10,
       stopConditions: { combine: 'any', maxDurationSec: 120 },
+      runOrigin: 'scheduled',
       originSpec: {
         scheme: 'any',
         host: { mode: 'exact', value: 'example.com' },
@@ -42,6 +43,8 @@ describe('buildRunnerCommand', () => {
       '2',
       '--max-pages',
       '10',
+      '--run-origin',
+      'scheduled',
       '--stop-conditions',
       '{"combine":"any","maxDurationSec":120}',
       '--origin-spec',
@@ -66,6 +69,7 @@ describe('buildRunnerCommand', () => {
       '{"scheme":"any","host":{"mode":"exact","value":"example.com"},"port":"same","allowList":[],"blockList":[]}',
     );
     expect(cmd.env.STOP_CONDITIONS_JSON).toBe('{"combine":"any","maxDurationSec":120}');
+    expect(cmd.env.RUN_ORIGIN).toBe('scheduled');
     expect(cmd.env.SAME_ORIGIN_ONLY).toBe('true');
     expect(cmd.env.VIEWPORT_WIDTH).toBe('1440');
     expect(cmd.env.INCLUDE_URL_PATTERNS).toBe('/docs');
@@ -78,6 +82,7 @@ describe('buildRunnerCommand', () => {
       maxDepth: 0,
       maxPages: 1,
       stopConditions: { combine: 'any' },
+      runOrigin: 'manual',
       sameOriginOnly: false,
       respectRobots: false,
       navTimeoutMs: 1000,

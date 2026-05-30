@@ -13,6 +13,7 @@ export interface RunnerCommand {
 export function buildRunnerCommand(options: RunLaunchInput): RunnerCommand {
   const command = process.env.TESTWORKER_RUNNER_COMMAND ?? 'pnpm';
   const cwd = process.env.TESTWORKER_RUNNER_CWD ?? process.cwd();
+  const runOrigin = options.runOrigin ?? 'manual';
   const args =
     command === 'pnpm'
       ? ['--filter', '@testworker/runner', 'run', 'crawl']
@@ -22,6 +23,7 @@ export function buildRunnerCommand(options: RunLaunchInput): RunnerCommand {
   if (options.appName) args.push('--app-name', options.appName);
   args.push('--max-depth', String(options.maxDepth));
   args.push('--max-pages', String(options.maxPages));
+  if (runOrigin !== 'manual') args.push('--run-origin', runOrigin);
   if (hasStopConditions(options.stopConditions)) {
     args.push('--stop-conditions', JSON.stringify(options.stopConditions));
   }
@@ -47,6 +49,7 @@ export function buildRunnerCommand(options: RunLaunchInput): RunnerCommand {
       APP_NAME: options.appName ?? '',
       MAX_DEPTH: String(options.maxDepth),
       MAX_PAGES: String(options.maxPages),
+      RUN_ORIGIN: runOrigin,
       STOP_CONDITIONS_JSON: hasStopConditions(options.stopConditions)
         ? JSON.stringify(options.stopConditions)
         : '',

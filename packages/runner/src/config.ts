@@ -18,6 +18,7 @@ export function optionsFromEnv(startUrl: string): CrawlOptions {
     maxDepth: numberFromEnv('MAX_DEPTH'),
     maxPages: numberFromEnv('MAX_PAGES'),
     stopConditions: stopConditionsFromEnv(),
+    runOrigin: runOriginFromEnv(),
     originSpec: originSpecFromEnv(),
     sameOriginOnly: boolFromEnv('SAME_ORIGIN_ONLY'),
     respectRobots: boolFromEnv('RESPECT_ROBOTS'),
@@ -38,6 +39,13 @@ export function optionsFromEnv(startUrl: string): CrawlOptions {
     loginScriptPath: process.env.LOGIN_SCRIPT_PATH || undefined,
     userAgent: process.env.USER_AGENT || undefined,
   });
+}
+
+function runOriginFromEnv(): CrawlOptions['runOrigin'] | undefined {
+  const raw = process.env.RUN_ORIGIN;
+  if (!raw) return undefined;
+  const parsed = CrawlOptions.shape.runOrigin.safeParse(raw);
+  return parsed.success ? parsed.data : undefined;
 }
 
 function stopConditionsFromEnv(): CrawlOptions['stopConditions'] | undefined {

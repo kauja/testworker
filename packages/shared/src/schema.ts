@@ -4,6 +4,9 @@ import { OriginSpec } from './origin-spec.js';
 export const RunStatus = z.enum(['queued', 'running', 'completed', 'failed', 'canceled']);
 export type RunStatus = z.infer<typeof RunStatus>;
 
+export const RunOrigin = z.enum(['manual', 'scheduled', 'api']);
+export type RunOrigin = z.infer<typeof RunOrigin>;
+
 export const RunStoppedReason = z.enum([
   'max_depth',
   'max_pages',
@@ -32,6 +35,21 @@ export const StopConditions = z.object({
   combine: z.enum(['any', 'all']).default('any'),
 });
 export type StopConditions = z.infer<typeof StopConditions>;
+
+export const ScheduleOverrides = z.object({
+  maxDurationSec: z.number().int().min(1).max(86_400).optional(),
+  notifyOnDiff: z.boolean().default(true),
+});
+export type ScheduleOverrides = z.infer<typeof ScheduleOverrides>;
+
+export const Schedule = z.object({
+  enabled: z.boolean().default(false),
+  cron: z.string().min(1).default('0 3 * * *'),
+  timezone: z.string().optional(),
+  overrides: ScheduleOverrides.default({ notifyOnDiff: true }),
+  skipIfPreviousStillRunning: z.boolean().default(true),
+});
+export type Schedule = z.infer<typeof Schedule>;
 
 /**
  * page.goto の waitUntil に渡す navigation 完了判定 (Issue #200)。
@@ -75,6 +93,7 @@ export const CrawlOptions = z.object({
   maxDepth: z.number().int().min(0).max(20).default(3),
   maxPages: z.number().int().min(1).max(2000).default(50),
   stopConditions: StopConditions.default({ combine: 'any' }),
+  runOrigin: RunOrigin.default('manual'),
   /**
    * Issue #182: crawl scope を boolean より明示的な OriginSpec で表現する。
    * absent の旧 run / API payload は sameOriginOnly から runner 側で生成する。
@@ -172,6 +191,7 @@ export const RunLaunchInput = CrawlOptions.pick({
   maxDepth: true,
   maxPages: true,
   stopConditions: true,
+  runOrigin: true,
   originSpec: true,
   sameOriginOnly: true,
   respectRobots: true,
@@ -200,6 +220,8 @@ export const App = z.object({
   originSpec: OriginSpec,
   entryUrl: z.string(),
   defaults: z.record(z.string(), z.unknown()).default({}),
+  schedule: Schedule.default({ enabled: false }),
+  lastScheduledAt: z.string().nullable().default(null),
   createdAt: z.string(),
 });
 export type App = z.infer<typeof App>;
@@ -213,6 +235,7 @@ export const Run = z.object({
   finishedAt: z.string().nullable(),
   options: CrawlOptions,
   errorMessage: z.string().nullable(),
+  origin: RunOrigin.default('manual'),
   stoppedReason: RunStoppedReason.nullable().default(null),
   /**
    * 走行中の進捗 (Issue #86)。 runner が BFS ループで定期更新する。
