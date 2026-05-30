@@ -19,6 +19,17 @@ class FakeElement {
     return this.attrs[name] ?? null;
   }
 
+  hasAttribute(name: string): boolean {
+    return this.attrs[name] !== undefined;
+  }
+
+  getBoundingClientRect(): { width: number; height: number } {
+    return {
+      width: Number(this.attrs['data-width'] ?? 100),
+      height: Number(this.attrs['data-height'] ?? 100),
+    };
+  }
+
   querySelectorAll(selector: string): FakeElement[] {
     return flatten(this).filter((element) => matchesAny(element, selector));
   }
@@ -32,6 +43,17 @@ function flatten(root: FakeElement): FakeElement[] {
 }
 
 function matches(element: FakeElement, selector: string): boolean {
+  if (selector === 'body *') return element.tagName.toLowerCase() !== 'body';
+  if (selector === '[role="dialog"]') return element.getAttribute('role') === 'dialog';
+  if (selector === '[role="alertdialog"]') return element.getAttribute('role') === 'alertdialog';
+  if (selector === '[role="alert"]') return element.getAttribute('role') === 'alert';
+  if (selector === '[role="status"]') return element.getAttribute('role') === 'status';
+  if (selector === '[aria-modal="true"]') return element.getAttribute('aria-modal') === 'true';
+  if (selector === '[aria-expanded="true"]')
+    return element.getAttribute('aria-expanded') === 'true';
+  if (selector === 'dialog[open]') {
+    return element.tagName.toLowerCase() === 'dialog' && element.hasAttribute('open');
+  }
   if (selector === '[role=main]') return element.getAttribute('role') === 'main';
   if (selector === '[role=navigation]') return element.getAttribute('role') === 'navigation';
   if (selector === '[role=button]') return element.getAttribute('role') === 'button';
@@ -52,8 +74,17 @@ function runStructureScript(body: FakeElement) {
     document: {
       body,
       documentElement: { scrollHeight: 900 },
-      querySelectorAll: (selector: string) => all.filter((element) => matches(element, selector)),
+      querySelectorAll: (selector: string) =>
+        all.filter((element) => matchesAny(element, selector)),
     },
+    getComputedStyle: (element: FakeElement) => ({
+      visibility: element.attrs['data-visibility'] ?? 'visible',
+      display: element.attrs['data-display'] ?? 'block',
+      opacity: element.attrs['data-opacity'] ?? '1',
+      position: element.attrs['data-position'] ?? 'static',
+      zIndex: element.attrs['data-z'] ?? '0',
+    }),
+    window: { innerWidth: 1000, innerHeight: 800 },
     location: { pathname: '/docs', search: '?q=1', hash: '#intro' },
   };
   return vm.runInNewContext(`(${STRUCTURE_SCRIPT})()`, context) as {
@@ -112,6 +143,71 @@ describe('STRUCTURE_SCRIPT', () => {
 
     expect(dom.tokens).toBe('nav[aria-label=Primary]{a[name=home]}');
     expect(dom.tokens).not.toContain('section');
+  });
+
+  it('includes role dialog overlays outside landmarks', () => {
+    const dom = runStructureScript(
+      el('body', {}, [
+        el('main', {}, [el('button', { 'data-testid': 'open' })]),
+        el('div', { role: 'dialog', 'aria-label': 'Password reset' }, [
+          el('button', { 'aria-label': 'Close' }),
+        ]),
+      ]),
+    );
+
+    expect(dom.tokens).toContain('overlays{dialog:');
+    expect(dom.tokens).toContain('div[role=dialog,aria-label=Password reset]');
+  });
+
+  it('includes alert and status overlays while ignoring dynamic text', () => {
+    const dom = runStructureScript(
+      el('body', {}, [
+        el('main'),
+        el('div', { role: 'alert', 'data-testid': 'toast' }, [el('span')]),
+        el('div', { role: 'status', 'aria-label': 'Saving' }),
+      ]),
+    );
+
+    expect(dom.tokens).toContain('alert:div[role=alert,data-testid=toast]');
+    expect(dom.tokens).toContain('alert:div[role=status,aria-label=Saving]');
+    expect(dom.tokens).not.toContain('Saving...');
+  });
+
+  it('includes open dialog elements', () => {
+    const dom = runStructureScript(el('body', {}, [el('main'), el('dialog', { open: '' })]));
+
+    expect(dom.tokens).toContain('dialog:dialog');
+  });
+
+  it('classifies fixed high z-index viewport overlays', () => {
+    const dom = runStructureScript(
+      el('body', {}, [
+        el('main'),
+        el('div', {
+          'data-position': 'fixed',
+          'data-z': '1200',
+          'data-width': '900',
+          'data-height': '600',
+          'data-testid': 'drawer',
+        }),
+      ]),
+    );
+
+    expect(dom.tokens).toContain('drawer:div[data-testid=drawer]');
+  });
+
+  it('ignores invisible and low z-index non overlays', () => {
+    const dom = runStructureScript(
+      el('body', {}, [
+        el('main'),
+        el('div', { role: 'dialog', 'data-display': 'none', 'data-testid': 'hidden-dialog' }),
+        el('div', { 'data-position': 'fixed', 'data-z': '10', 'data-testid': 'banner' }),
+      ]),
+    );
+
+    expect(dom.tokens).not.toContain('hidden-dialog');
+    expect(dom.tokens).not.toContain('banner');
+    expect(dom.tokens).not.toContain('overlays{');
   });
 
   it('cuts off DOM tokenization after the configured depth', () => {

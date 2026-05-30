@@ -55,6 +55,61 @@ export const NAV_SCRIPT = `() => {
     return own + '{' + [linkish, kids].filter(Boolean).join('|') + '}';
   }
 
+  function visible(el) {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return false;
+    const style = getComputedStyle(el);
+    return style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0';
+  }
+
+  function overlayKind(el) {
+    const tag = el.tagName.toLowerCase();
+    const role = el.getAttribute('role');
+    if ((tag === 'dialog' && el.hasAttribute('open')) || role === 'dialog' || role === 'alertdialog' || el.getAttribute('aria-modal') === 'true') {
+      return 'dialog';
+    }
+    if (role === 'alert' || role === 'status') return 'alert';
+    if (el.getAttribute('aria-expanded') === 'true') return 'disclosure';
+    const style = getComputedStyle(el);
+    const z = Number.parseInt(style.zIndex || '0', 10);
+    if (style.position === 'fixed' && Number.isFinite(z) && z >= 1000) {
+      const r = el.getBoundingClientRect();
+      const viewportArea = Math.max(1, window.innerWidth * window.innerHeight);
+      if ((r.width * r.height) / viewportArea >= 0.3) return 'drawer';
+      return 'popover';
+    }
+    return null;
+  }
+
+  function overlayTokens() {
+    const selectors = [
+      '[role="dialog"]',
+      '[role="alertdialog"]',
+      'dialog[open]',
+      '[role="alert"]',
+      '[role="status"]',
+      '[aria-modal="true"]',
+      '[aria-expanded="true"]',
+    ];
+    const candidates = Array.from(document.querySelectorAll(selectors.join(',')));
+    document.querySelectorAll('body *').forEach((el) => {
+      const style = getComputedStyle(el);
+      if (style.position !== 'fixed') return;
+      const z = Number.parseInt(style.zIndex || '0', 10);
+      if (Number.isFinite(z) && z >= 1000) candidates.push(el);
+    });
+    const seen = new Set();
+    return candidates
+      .filter((el) => {
+        if (seen.has(el)) return false;
+        seen.add(el);
+        return visible(el) && overlayKind(el);
+      })
+      .slice(0, 16)
+      .map((el) => overlayKind(el) + ':' + tokenize(el, 0))
+      .join('|');
+  }
+
   const landmarks = ['header', 'nav', 'aside', '[role=navigation]'];
   const seen = new Set();
   const parts = [];
@@ -101,6 +156,61 @@ export const STRUCTURE_SCRIPT = `() => {
     return result;
   }
 
+  function visible(el) {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return false;
+    const style = getComputedStyle(el);
+    return style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0';
+  }
+
+  function overlayKind(el) {
+    const tag = el.tagName.toLowerCase();
+    const role = el.getAttribute('role');
+    if ((tag === 'dialog' && el.hasAttribute('open')) || role === 'dialog' || role === 'alertdialog' || el.getAttribute('aria-modal') === 'true') {
+      return 'dialog';
+    }
+    if (role === 'alert' || role === 'status') return 'alert';
+    if (el.getAttribute('aria-expanded') === 'true') return 'disclosure';
+    const style = getComputedStyle(el);
+    const z = Number.parseInt(style.zIndex || '0', 10);
+    if (style.position === 'fixed' && Number.isFinite(z) && z >= 1000) {
+      const r = el.getBoundingClientRect();
+      const viewportArea = Math.max(1, window.innerWidth * window.innerHeight);
+      if ((r.width * r.height) / viewportArea >= 0.3) return 'drawer';
+      return 'popover';
+    }
+    return null;
+  }
+
+  function overlayTokens() {
+    const selectors = [
+      '[role="dialog"]',
+      '[role="alertdialog"]',
+      'dialog[open]',
+      '[role="alert"]',
+      '[role="status"]',
+      '[aria-modal="true"]',
+      '[aria-expanded="true"]',
+    ];
+    const candidates = Array.from(document.querySelectorAll(selectors.join(',')));
+    document.querySelectorAll('body *').forEach((el) => {
+      const style = getComputedStyle(el);
+      if (style.position !== 'fixed') return;
+      const z = Number.parseInt(style.zIndex || '0', 10);
+      if (Number.isFinite(z) && z >= 1000) candidates.push(el);
+    });
+    const seen = new Set();
+    return candidates
+      .filter((el) => {
+        if (seen.has(el)) return false;
+        seen.add(el);
+        return visible(el) && overlayKind(el);
+      })
+      .slice(0, 16)
+      .map((el) => overlayKind(el) + ':' + tokenize(el, 0))
+      .join('|');
+  }
+
   const landmarks = ['header', 'nav', 'main', 'footer', 'aside', '[role=main]', '[role=navigation]'];
   const seen = new Set();
   const parts = [];
@@ -114,6 +224,8 @@ export const STRUCTURE_SCRIPT = `() => {
   if (parts.length === 0 && document.body) {
     parts.push(tokenize(document.body, 0));
   }
+  const overlays = overlayTokens();
+  if (overlays) parts.push('overlays{' + overlays + '}');
   const visibleH = Math.max(
     document.documentElement.scrollHeight,
     document.body ? document.body.scrollHeight : 0,
