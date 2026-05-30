@@ -170,9 +170,15 @@ pnpm --filter @testworker/runner run crawl -- --url http://localhost:3000
 | ------------------------------------- | ---------------------------------- |
 | `data/db/testworker.sqlite`           | run / page / edge / log メタデータ |
 | `data/runs/<runId>/screenshots/*.png` | スクリーンショット                 |
+| `data/runs/<runId>/errors/<errorId>/` | root cause kit の DOM / screenshot |
 | `data/auth/*.json`                    | （任意）`storageState` を置く場所  |
 
 `./data` は `.gitignore` 済みです。
+
+root cause kit は JS エラーごとに直前の console / network / interaction、DOM snapshot、
+error screenshot、環境メタデータを保存します。`localStorage` / `sessionStorage` の値は
+PII を含む可能性があるため既定では保存しません。必要な場合のみ runner に
+`--collect-storage` または `COLLECT_STORAGE=true` を渡してください。
 
 ---
 

@@ -2,6 +2,7 @@ import type {
   AppDetail,
   AppSummary,
   ErrorGroup,
+  ErrorContext,
   GraphPayload,
   PageDetail,
   Run,
@@ -121,6 +122,8 @@ export const fetchErrorGroups = (runId: string, init?: RequestInit) =>
   get<ErrorGroup[]>(`/runs/${runId}/errors/grouped`, init);
 export const fetchRunErrors = (runId: string, init?: RequestInit) =>
   get<RunErrorsPayload>(`/runs/${runId}/errors`, init);
+export const fetchErrorContext = (errorId: string, init?: RequestInit) =>
+  get<ErrorContext>(`/errors/${errorId}/context`, init);
 export const fetchRunDiff = (
   runId: string,
   base: string | 'previous' = 'previous',

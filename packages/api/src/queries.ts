@@ -7,6 +7,7 @@ import type {
   ConsoleEntry,
   Edge,
   ErrorGroup,
+  ErrorContext,
   GraphPayload,
   NetworkEntry,
   PageDetail,
@@ -32,6 +33,7 @@ import type {
 } from '@testworker/shared';
 import {
   CrawlOptions,
+  ErrorContext as ErrorContextSchema,
   PageMetrics as PageMetricsSchema,
   log,
   parseStoredOriginSpec,
@@ -133,6 +135,14 @@ interface PageV2Meta {
   stability: ScreenStability | null;
 }
 
+interface ErrorContextRow {
+  error_id: string;
+  payload_json: string;
+  dom_ref: string | null;
+  screenshot_ref: string | null;
+  created_at: string;
+}
+
 export interface StabilityOptions {
   origin?: string;
   windowSize?: number;
@@ -206,6 +216,8 @@ export function rowToRun(row: RunRow): Run {
           : [],
         captureWebVitals:
           typeof validFields.captureWebVitals === 'boolean' ? validFields.captureWebVitals : true,
+        collectStorage:
+          typeof validFields.collectStorage === 'boolean' ? validFields.collectStorage : false,
       } as CrawlOptions;
     }
   }
@@ -692,6 +704,21 @@ export function getPageDetail(db: Database.Database, pageStateId: string): PageD
     db.prepare(`SELECT * FROM edges WHERE from_page_state_id = ?`).all(pageStateId) as EdgeRow[]
   ).map(rowToEdge);
   return { page, console: consoleEntries, network, errors, incoming, outgoing };
+}
+
+export function getErrorContext(db: Database.Database, errorId: string): ErrorContext | null {
+  if (!tableExists(db, 'error_contexts')) return null;
+  const row = db.prepare(`SELECT * FROM error_contexts WHERE error_id = ?`).get(errorId) as
+    | ErrorContextRow
+    | undefined;
+  if (!row) return null;
+  try {
+    const parsed = ErrorContextSchema.safeParse(JSON.parse(row.payload_json));
+    if (parsed.success) return parsed.data;
+  } catch {
+    // Legacy/corrupt context rows are treated as absent rather than breaking the inspector.
+  }
+  return null;
 }
 
 /**

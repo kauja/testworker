@@ -31,6 +31,7 @@ export function optionsFromEnv(startUrl: string): CrawlOptions {
     cacheMode: cacheModeFromEnv(),
     networkThrottle: networkThrottleFromEnv(),
     cpuThrottle: numberFromEnv('CPU_THROTTLE'),
+    collectStorage: boolFromEnv('COLLECT_STORAGE'),
     storageStatePath: process.env.STORAGE_STATE_PATH || undefined,
     loginScriptPath: process.env.LOGIN_SCRIPT_PATH || undefined,
     userAgent: process.env.USER_AGENT || undefined,

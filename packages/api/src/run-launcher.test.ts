@@ -23,6 +23,7 @@ describe('buildRunnerCommand', () => {
       excludeUrlPatterns: ['/admin'],
       userAgent: 'testworker-smoke',
       captureWebVitals: true,
+      collectStorage: true,
     });
 
     expect(cmd.command).toBe('pnpm');
@@ -51,6 +52,7 @@ describe('buildRunnerCommand', () => {
       '/admin',
       '--user-agent',
       'testworker-smoke',
+      '--collect-storage',
     ]);
     expect(cmd.env.START_URL).toBe('https://example.com');
     expect(cmd.env.ORIGIN_SPEC_JSON).toBe(
@@ -59,6 +61,7 @@ describe('buildRunnerCommand', () => {
     expect(cmd.env.SAME_ORIGIN_ONLY).toBe('true');
     expect(cmd.env.VIEWPORT_WIDTH).toBe('1440');
     expect(cmd.env.INCLUDE_URL_PATTERNS).toBe('/docs');
+    expect(cmd.env.COLLECT_STORAGE).toBe('true');
   });
 
   it('passes explicit opt-outs to the runner CLI', () => {
@@ -74,6 +77,7 @@ describe('buildRunnerCommand', () => {
       includeUrlPatterns: [],
       excludeUrlPatterns: [],
       captureWebVitals: false,
+      collectStorage: false,
     });
 
     expect(cmd.args).toContain('--no-same-origin');

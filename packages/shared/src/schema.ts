@@ -122,6 +122,11 @@ export const CrawlOptions = z.object({
    */
   cpuThrottle: z.number().min(1).max(20).default(1),
   /**
+   * Issue #185: root cause kit 用の storage snapshot。 default false。
+   * true の場合のみ localStorage / sessionStorage の値を保存する。
+   */
+  collectStorage: z.boolean().default(false),
+  /**
    * Device / Viewport プリセット (Issue #196)。 default `desktop` は passthrough で
    * 既存挙動を維持。 非 default の profile は viewport / userAgent / deviceScaleFactor を
    * 上書きする (実 viewport は runner 側の resolveDeviceProfile が決定)。
@@ -144,6 +149,7 @@ export const RunLaunchInput = CrawlOptions.pick({
   excludeUrlPatterns: true,
   userAgent: true,
   captureWebVitals: true,
+  collectStorage: true,
 });
 export type RunLaunchInput = z.infer<typeof RunLaunchInput>;
 
@@ -312,6 +318,92 @@ export const PageError = z.object({
   timestamp: z.string(),
 });
 export type PageError = z.infer<typeof PageError>;
+
+export const ErrorStackFrame = z.object({
+  raw: z.string(),
+  functionName: z.string().nullable().default(null),
+  file: z.string().nullable().default(null),
+  line: z.number().int().nullable().default(null),
+  column: z.number().int().nullable().default(null),
+});
+export type ErrorStackFrame = z.infer<typeof ErrorStackFrame>;
+
+export const ErrorInteraction = z.object({
+  kind: z.enum(['click', 'input', 'keypress', 'scroll', 'history']),
+  selector: z.string().nullable(),
+  domPath: z.string().nullable(),
+  text: z.string().nullable(),
+  value: z.string().nullable(),
+  key: z.string().nullable(),
+  timestamp: z.string(),
+  deltaMs: z.number().int(),
+  boundingBox: z
+    .object({
+      x: z.number(),
+      y: z.number(),
+      width: z.number(),
+      height: z.number(),
+    })
+    .nullable(),
+});
+export type ErrorInteraction = z.infer<typeof ErrorInteraction>;
+
+export const ErrorNetworkSummary = NetworkEntry.extend({
+  deltaMs: z.number().int(),
+});
+export type ErrorNetworkSummary = z.infer<typeof ErrorNetworkSummary>;
+
+export const ErrorConsoleSummary = ConsoleEntry.extend({
+  deltaMs: z.number().int(),
+});
+export type ErrorConsoleSummary = z.infer<typeof ErrorConsoleSummary>;
+
+export const ErrorEnvironment = z.object({
+  url: z.string(),
+  pathname: z.string(),
+  search: z.string(),
+  hash: z.string(),
+  viewport: z.object({ width: z.number(), height: z.number() }),
+  devicePixelRatio: z.number(),
+  userAgent: z.string(),
+  language: z.string(),
+  timezone: z.string(),
+});
+export type ErrorEnvironment = z.infer<typeof ErrorEnvironment>;
+
+export const ErrorStorageSnapshot = z.object({
+  localStorage: z.record(z.string(), z.string()),
+  sessionStorage: z.record(z.string(), z.string()),
+  cookies: z.array(
+    z.object({
+      name: z.string(),
+      domain: z.string(),
+      path: z.string(),
+      expires: z.number(),
+      httpOnly: z.boolean(),
+      secure: z.boolean(),
+      sameSite: z.string(),
+    }),
+  ),
+});
+export type ErrorStorageSnapshot = z.infer<typeof ErrorStorageSnapshot>;
+
+export const ErrorContext = z.object({
+  errorId: z.string(),
+  pageStateId: z.string(),
+  capturedAt: z.string(),
+  message: z.string(),
+  stack: z.string().nullable(),
+  symbolicatedStack: z.array(ErrorStackFrame),
+  recentInteractions: z.array(ErrorInteraction),
+  recentNetwork: z.array(ErrorNetworkSummary),
+  recentConsole: z.array(ErrorConsoleSummary),
+  domSnapshotRef: z.string().nullable(),
+  screenshotRef: z.string().nullable(),
+  env: ErrorEnvironment,
+  storage: ErrorStorageSnapshot.nullable(),
+});
+export type ErrorContext = z.infer<typeof ErrorContext>;
 
 export const RunSummary = z.object({
   run: Run,

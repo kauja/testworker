@@ -7,6 +7,7 @@ import type {
   ConsoleEntry,
   Edge,
   EdgeKind,
+  ErrorContext,
   NetworkEntry,
   PageError,
   PageState,
@@ -333,4 +334,29 @@ export function insertErrorBatch(db: Db, entries: PageError[]): void {
     for (const r of rows) stmt.run(r.id, r.pageStateId, r.kind, r.message, r.stack, r.timestamp);
   });
   tx(entries);
+}
+
+export function insertErrorContextBatch(db: Db, contexts: ErrorContext[]): void {
+  if (contexts.length === 0 || !tableExists(db, 'error_contexts')) return;
+  const stmt = db.$sqlite.prepare(`
+    INSERT INTO error_contexts (error_id, payload_json, dom_ref, screenshot_ref, created_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(error_id) DO UPDATE SET
+      payload_json = excluded.payload_json,
+      dom_ref = excluded.dom_ref,
+      screenshot_ref = excluded.screenshot_ref,
+      created_at = excluded.created_at
+  `);
+  const tx = db.$sqlite.transaction((rows: ErrorContext[]) => {
+    for (const row of rows) {
+      stmt.run(
+        row.errorId,
+        JSON.stringify(row),
+        row.domSnapshotRef,
+        row.screenshotRef,
+        row.capturedAt,
+      );
+    }
+  });
+  tx(contexts);
 }

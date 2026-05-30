@@ -31,6 +31,7 @@ export function buildRunnerCommand(options: RunLaunchInput): RunnerCommand {
   if (!options.sameOriginOnly) args.push('--no-same-origin');
   if (!options.respectRobots) args.push('--no-respect-robots');
   if (!options.captureWebVitals) args.push('--no-web-vitals');
+  if (options.collectStorage) args.push('--collect-storage');
 
   return {
     command,
@@ -52,6 +53,7 @@ export function buildRunnerCommand(options: RunLaunchInput): RunnerCommand {
       SAME_ORIGIN_ONLY: options.sameOriginOnly ? 'true' : 'false',
       RESPECT_ROBOTS: options.respectRobots ? 'true' : 'false',
       CAPTURE_WEB_VITALS: options.captureWebVitals ? 'true' : 'false',
+      COLLECT_STORAGE: options.collectStorage ? 'true' : 'false',
     },
   };
 }
