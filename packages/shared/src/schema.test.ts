@@ -8,6 +8,7 @@ describe('CrawlOptions', () => {
       startUrl: 'https://example.com',
       maxDepth: 3,
       maxPages: 50,
+      stopConditions: { combine: 'any' },
       sameOriginOnly: true,
       respectRobots: true,
       navTimeoutMs: 15_000,
@@ -75,10 +76,12 @@ describe('Run', () => {
       }),
     ).toMatchObject({
       id: 'run_1',
+      stoppedReason: null,
       options: {
         startUrl: 'https://example.com',
         maxDepth: 3,
         maxPages: 50,
+        stopConditions: { combine: 'any' },
         respectRobots: true,
       },
     });

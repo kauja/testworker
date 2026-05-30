@@ -12,6 +12,7 @@ import type {
   PageError,
   PageState,
   Run,
+  RunStoppedReason,
   Screen,
   ScreenState,
 } from '@testworker/shared';
@@ -91,9 +92,9 @@ export function insertRun(db: Db, run: Run): void {
   const stmt = db.$sqlite.prepare(`
     INSERT INTO runs (
       id, start_url, status, started_at, finished_at, options_json, error_message,
-      pages_done, queue_size, current_url, har_path, app_id
+      pages_done, queue_size, current_url, har_path, app_id, stopped_reason
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run(
     run.id,
@@ -108,6 +109,7 @@ export function insertRun(db: Db, run: Run): void {
     run.currentUrl,
     run.harPath,
     run.appId ?? app?.id ?? null,
+    run.stoppedReason,
   );
 }
 
@@ -117,11 +119,12 @@ export function updateRunStatus(
   status: Run['status'],
   finishedAt: string | null,
   errorMessage: string | null,
+  stoppedReason: RunStoppedReason | null = null,
 ): void {
   const stmt = db.$sqlite.prepare(
-    `UPDATE runs SET status = ?, finished_at = ?, error_message = ? WHERE id = ?`,
+    `UPDATE runs SET status = ?, finished_at = ?, error_message = ?, stopped_reason = ? WHERE id = ?`,
   );
-  stmt.run(status, finishedAt, errorMessage, runId);
+  stmt.run(status, finishedAt, errorMessage, stoppedReason, runId);
 }
 
 /**

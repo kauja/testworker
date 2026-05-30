@@ -22,6 +22,9 @@ export function buildRunnerCommand(options: RunLaunchInput): RunnerCommand {
   if (options.appName) args.push('--app-name', options.appName);
   args.push('--max-depth', String(options.maxDepth));
   args.push('--max-pages', String(options.maxPages));
+  if (hasStopConditions(options.stopConditions)) {
+    args.push('--stop-conditions', JSON.stringify(options.stopConditions));
+  }
   if (options.originSpec) args.push('--origin-spec', JSON.stringify(options.originSpec));
   args.push('--nav-timeout-ms', String(options.navTimeoutMs));
   args.push('--wait-after-nav-ms', String(options.waitAfterNavMs));
@@ -44,6 +47,9 @@ export function buildRunnerCommand(options: RunLaunchInput): RunnerCommand {
       APP_NAME: options.appName ?? '',
       MAX_DEPTH: String(options.maxDepth),
       MAX_PAGES: String(options.maxPages),
+      STOP_CONDITIONS_JSON: hasStopConditions(options.stopConditions)
+        ? JSON.stringify(options.stopConditions)
+        : '',
       ORIGIN_SPEC_JSON: options.originSpec ? JSON.stringify(options.originSpec) : '',
       NAV_TIMEOUT_MS: String(options.navTimeoutMs),
       WAIT_AFTER_NAV_MS: String(options.waitAfterNavMs),
@@ -58,6 +64,11 @@ export function buildRunnerCommand(options: RunLaunchInput): RunnerCommand {
       COLLECT_STORAGE: options.collectStorage ? 'true' : 'false',
     },
   };
+}
+
+function hasStopConditions(stopConditions: RunLaunchInput['stopConditions']): boolean {
+  if (!stopConditions) return false;
+  return Object.keys(stopConditions).some((key) => key !== 'combine');
 }
 
 export function launchCrawl(options: RunLaunchInput): ChildProcess {

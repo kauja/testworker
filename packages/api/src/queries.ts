@@ -35,6 +35,7 @@ import {
   CrawlOptions,
   ErrorContext as ErrorContextSchema,
   PageMetrics as PageMetricsSchema,
+  RunStoppedReason as RunStoppedReasonSchema,
   log,
   parseStoredOriginSpec,
 } from '@testworker/shared';
@@ -58,6 +59,8 @@ interface RunRow {
   current_url: string | null;
   /** HAR ファイルへの DATA_DIR 相対パス (Issue #87)。 旧 run / 失敗 run では null。 */
   har_path: string | null;
+  /** Issue #190: stop condition / crash reason. Older DB files do not have this column. */
+  stopped_reason?: string | null;
 }
 
 interface AppRow {
@@ -218,6 +221,10 @@ export function rowToRun(row: RunRow): Run {
           typeof validFields.captureWebVitals === 'boolean' ? validFields.captureWebVitals : true,
         collectStorage:
           typeof validFields.collectStorage === 'boolean' ? validFields.collectStorage : false,
+        stopConditions:
+          typeof validFields.stopConditions === 'object' && validFields.stopConditions !== null
+            ? (validFields.stopConditions as CrawlOptions['stopConditions'])
+            : { combine: 'any' },
       } as CrawlOptions;
     }
   }
@@ -230,11 +237,17 @@ export function rowToRun(row: RunRow): Run {
     finishedAt: row.finished_at,
     options,
     errorMessage: row.error_message,
+    stoppedReason: parseStoppedReason(row.stopped_reason),
     pagesDone: row.pages_done ?? 0,
     queueSize: row.queue_size,
     currentUrl: row.current_url,
     harPath: row.har_path ?? null,
   };
+}
+
+function parseStoppedReason(raw: string | null | undefined): Run['stoppedReason'] {
+  const parsed = RunStoppedReasonSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
 }
 
 function rowToApp(row: AppRow): App {

@@ -6,6 +6,7 @@ import { useState, useTransition } from 'react';
 import type { RunSummary } from '@testworker/shared';
 import { cn } from '@/lib/cn';
 import { RunProgress } from './run-progress';
+import { StopReasonBadge } from './stop-reason-badge';
 import { TimeStamp } from './time-stamp';
 
 export function RunList({ runs }: { runs: RunSummary[] }) {
@@ -50,7 +51,7 @@ export function RunList({ runs }: { runs: RunSummary[] }) {
               </div>
               <StatusPill status={r.run.status} />
             </div>
-            <div className="mt-3 flex items-center gap-6 text-xs text-ink-muted">
+            <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-ink-muted">
               <Stat label="pages" value={r.pageCount} />
               <Stat label="edges" value={r.edgeCount} />
               <Stat
@@ -58,6 +59,7 @@ export function RunList({ runs }: { runs: RunSummary[] }) {
                 value={r.errorCount}
                 tone={r.errorCount > 0 ? 'bad' : undefined}
               />
+              <StopReasonBadge reason={r.run.stoppedReason} compact />
             </div>
             {(r.run.status === 'running' || r.run.status === 'queued') && (
               <div className="mt-3">

@@ -4,6 +4,35 @@ import { OriginSpec } from './origin-spec.js';
 export const RunStatus = z.enum(['queued', 'running', 'completed', 'failed', 'canceled']);
 export type RunStatus = z.infer<typeof RunStatus>;
 
+export const RunStoppedReason = z.enum([
+  'max_depth',
+  'max_pages',
+  'max_duration',
+  'max_errors',
+  'max_network_fails',
+  'stable_plateau',
+  'reached_url',
+  'reached_selector',
+  'max_screenshots',
+  'manual_cancel',
+  'crashed',
+]);
+export type RunStoppedReason = z.infer<typeof RunStoppedReason>;
+
+export const StopConditions = z.object({
+  maxDepth: z.number().int().min(0).max(20).optional(),
+  maxPages: z.number().int().min(1).max(2000).optional(),
+  maxDurationSec: z.number().int().min(1).max(86_400).optional(),
+  maxScreenshots: z.number().int().min(1).max(2000).optional(),
+  maxErrors: z.number().int().min(1).max(100_000).optional(),
+  maxNetworkFails: z.number().int().min(1).max(100_000).optional(),
+  stableForN: z.number().int().min(1).max(1000).optional(),
+  untilUrl: z.string().min(1).optional(),
+  untilSelector: z.string().min(1).optional(),
+  combine: z.enum(['any', 'all']).default('any'),
+});
+export type StopConditions = z.infer<typeof StopConditions>;
+
 /**
  * page.goto の waitUntil に渡す navigation 完了判定 (Issue #200)。
  * - load: load イベントまで待つ (従来の挙動)
@@ -45,6 +74,7 @@ export const CrawlOptions = z.object({
   appName: z.string().min(1).max(120).optional(),
   maxDepth: z.number().int().min(0).max(20).default(3),
   maxPages: z.number().int().min(1).max(2000).default(50),
+  stopConditions: StopConditions.default({ combine: 'any' }),
   /**
    * Issue #182: crawl scope を boolean より明示的な OriginSpec で表現する。
    * absent の旧 run / API payload は sameOriginOnly から runner 側で生成する。
@@ -141,6 +171,7 @@ export const RunLaunchInput = CrawlOptions.pick({
   appName: true,
   maxDepth: true,
   maxPages: true,
+  stopConditions: true,
   originSpec: true,
   sameOriginOnly: true,
   respectRobots: true,
@@ -182,6 +213,7 @@ export const Run = z.object({
   finishedAt: z.string().nullable(),
   options: CrawlOptions,
   errorMessage: z.string().nullable(),
+  stoppedReason: RunStoppedReason.nullable().default(null),
   /**
    * 走行中の進捗 (Issue #86)。 runner が BFS ループで定期更新する。
    * 旧 run (column 追加前) は default で 0 / null になる。

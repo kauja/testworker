@@ -13,6 +13,7 @@ import {
   type NavigationTrigger,
   type PageState,
   type Run,
+  type RunStoppedReason,
   type Screen,
   type ScreenState,
 } from '@testworker/shared';
@@ -51,6 +52,7 @@ import { hasResourceBlocking, installResourceBlocking } from './resource-block.j
 import { loadInjectScript } from './inject.js';
 import { resolveDeviceProfile } from './devices.js';
 import { isAllowedOrigin } from './origin-spec.js';
+import { evaluateSafetyCaps, evaluateStopConditions, type StopMetrics } from './stop-conditions.js';
 
 const DEFAULT_ROBOTS_UA = 'testworker';
 
@@ -95,6 +97,7 @@ export async function runCrawl(
     finishedAt: null,
     options,
     errorMessage: null,
+    stoppedReason: null,
     pagesDone: 0,
     queueSize: 1,
     currentUrl: options.startUrl,
@@ -113,6 +116,12 @@ export async function runCrawl(
   let context: BrowserContext | null = null;
   let pageCount = 0;
   let edgeCount = 0;
+  let pageErrorCount = 0;
+  let networkFailCount = 0;
+  let screenshotCount = 0;
+  let stableSteps = 0;
+  let stoppedReason: RunStoppedReason | null = null;
+  const startedMs = Date.parse(startedAt);
 
   try {
     // Issue #196: deviceProfile を 1 回だけ解決し、 newContext と
@@ -201,13 +210,28 @@ export async function runCrawl(
       },
     ];
 
-    while (frontier.length > 0 && pageCount < options.maxPages) {
+    while (frontier.length > 0) {
       const task = frontier.shift()!;
+      const preStepStop = evaluateStopState({
+        options,
+        startedMs,
+        pageCount,
+        pageErrorCount,
+        networkFailCount,
+        screenshotCount,
+        stableSteps,
+        currentUrl: null,
+        nextDepth: task.depth,
+        selectorFound: false,
+      });
+      if (preStepStop) {
+        stoppedReason = preStepStop;
+        break;
+      }
       // Issue #86: 走行中の進捗を runs テーブルに書き戻して Web UI から見える状態にする。
       // BFS ループ先頭で 1 ページごとに UPDATE 1 本だけ。 task が同 origin / robots /
       // include-exclude で弾かれても currentUrl は「次に試行している URL」として正しい。
       updateRunProgress(db, runId, pageCount, frontier.length + 1, task.url);
-      if (task.depth > options.maxDepth) continue;
       if (!isAllowedOrigin(task.url, originSpec, options.startUrl)) continue;
       if (!urlMatches(task.url, options)) continue;
 
@@ -268,6 +292,7 @@ export async function runCrawl(
       const pageStateId = exists?.id ?? newScreenStateId();
 
       if (isRevisit) {
+        stableSteps += 1;
         // 同一 signature の再訪は upsertPageState の ON CONFLICT で error_count が
         // 加算され、 console/network/page_errors も毎回 INSERT されて重複する。
         // edge だけ作って snapshot は破棄する。
@@ -293,6 +318,22 @@ export async function runCrawl(
           insertEdge(db, edge);
           edgeCount += 1;
         }
+        const revisitStop = evaluateStopState({
+          options,
+          startedMs,
+          pageCount,
+          pageErrorCount,
+          networkFailCount,
+          screenshotCount,
+          stableSteps,
+          currentUrl: sig.url,
+          nextDepth: task.depth,
+          selectorFound: await selectorExists(page, options.stopConditions.untilSelector),
+        });
+        if (revisitStop) {
+          stoppedReason = revisitStop;
+          break;
+        }
         continue;
       }
 
@@ -300,6 +341,7 @@ export async function runCrawl(
       const absScreenshot = join(dataDir, screenshotPath);
       try {
         await page.screenshot({ path: absScreenshot, fullPage: false });
+        screenshotCount += 1;
       } catch (err) {
         clog.warn({ err: (err as Error).message, pageStateId }, 'screenshot failed');
       }
@@ -313,6 +355,8 @@ export async function runCrawl(
         (n) => n.failed || (n.status ?? 0) >= 400,
       ).length;
       const errCount = pageErrors.length;
+      pageErrorCount += errCount;
+      networkFailCount += networkErrCount;
       const metrics = options.captureWebVitals ? await collectWebVitals(page) : {};
       const errorContexts = await collectErrorContexts({
         page,
@@ -368,6 +412,7 @@ export async function runCrawl(
       insertErrorContextBatch(db, errorContexts);
 
       pageCount += 1;
+      stableSteps = 0;
 
       if (task.fromPageStateId && task.fromPageStateId !== pageStateId) {
         const edge: Edge = {
@@ -388,6 +433,23 @@ export async function runCrawl(
       }
 
       visitedSignatures.add(sig.signature);
+
+      const postStepStop = evaluateStopState({
+        options,
+        startedMs,
+        pageCount,
+        pageErrorCount,
+        networkFailCount,
+        screenshotCount,
+        stableSteps,
+        currentUrl: sig.url,
+        nextDepth: task.depth,
+        selectorFound: await selectorExists(page, options.stopConditions.untilSelector),
+      });
+      if (postStepStop) {
+        stoppedReason = postStepStop;
+        break;
+      }
 
       if (task.depth >= options.maxDepth) continue;
 
@@ -412,12 +474,14 @@ export async function runCrawl(
 
     // 完了時に最終 progress を確定。 currentUrl は null (now idle)。
     updateRunProgress(db, runId, pageCount, 0, null);
-    updateRunStatus(db, runId, 'completed', new Date().toISOString(), null);
+    const finishedAt = new Date().toISOString();
+    updateRunStatus(db, runId, 'completed', finishedAt, null, stoppedReason);
     return {
       run: {
         ...run,
         status: 'completed',
-        finishedAt: new Date().toISOString(),
+        finishedAt,
+        stoppedReason,
         pagesDone: pageCount,
         queueSize: 0,
         currentUrl: null,
@@ -429,7 +493,7 @@ export async function runCrawl(
     const message = (err as Error).message;
     // failed 時も進捗の最終値を残しておくと UI で「N/M で失敗」が見える。
     updateRunProgress(db, runId, pageCount, 0, null);
-    updateRunStatus(db, runId, 'failed', new Date().toISOString(), message);
+    updateRunStatus(db, runId, 'failed', new Date().toISOString(), message, 'crashed');
     throw err;
   } finally {
     // recordHar の flush は context.close() 内で実行されるので、 必ず close →
@@ -444,6 +508,44 @@ export async function runCrawl(
     } catch (err) {
       clog.warn({ err: (err as Error).message }, 'HAR path update failed');
     }
+  }
+}
+
+function evaluateStopState(params: {
+  options: CrawlOptions;
+  startedMs: number;
+  pageCount: number;
+  pageErrorCount: number;
+  networkFailCount: number;
+  screenshotCount: number;
+  stableSteps: number;
+  currentUrl: string | null;
+  nextDepth: number | null;
+  selectorFound: boolean;
+}): RunStoppedReason | null {
+  const metrics: StopMetrics = {
+    elapsedMs: Date.now() - params.startedMs,
+    nextDepth: params.nextDepth,
+    pageCount: params.pageCount,
+    pageErrorCount: params.pageErrorCount,
+    networkFailCount: params.networkFailCount,
+    screenshotCount: params.screenshotCount,
+    stableSteps: params.stableSteps,
+    currentUrl: params.currentUrl,
+    selectorFound: params.selectorFound,
+  };
+  const explicit = evaluateStopConditions(params.options.stopConditions, metrics);
+  if (explicit.shouldStop) return explicit.reason;
+  const safety = evaluateSafetyCaps(params.options, metrics);
+  return safety.shouldStop ? safety.reason : null;
+}
+
+async function selectorExists(page: Page, selector: string | undefined): Promise<boolean> {
+  if (!selector) return false;
+  try {
+    return (await page.locator(selector).count()) > 0;
+  } catch {
+    return false;
   }
 }
 
