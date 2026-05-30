@@ -7,8 +7,9 @@ import { assetUrl, fetchPage } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { TimeStamp } from './time-stamp';
 
-const DETAIL_TABS = ['overview', 'routes', 'console', 'network', 'errors'] as const;
-type Tab = (typeof DETAIL_TABS)[number];
+export const DETAIL_TABS = ['screen', 'console', 'network', 'errors', 'routes', 'vitals'] as const;
+export type DetailTab = (typeof DETAIL_TABS)[number];
+type Tab = DetailTab;
 type ConsoleLevel = 'log' | 'info' | 'warn' | 'error' | 'debug';
 type NetStatusBucket = '2xx' | '3xx' | '4xx' | '5xx' | 'failed';
 
@@ -31,8 +32,9 @@ export function PageDetailPanel({
 }) {
   const [detail, setDetail] = useState<PageDetail | null>(null);
   const [loading, setLoading] = useState(false);
-  const [tabParam, setTabParam] = useQueryParamState('tab', 'overview');
-  const tab = isDetailTab(tabParam) ? tabParam : 'overview';
+  const [tabParam, setTabParam] = useQueryParamState('tab', 'screen', { history: 'push' });
+  const normalizedTabParam = tabParam === 'overview' ? 'screen' : tabParam;
+  const tab = isDetailTab(normalizedTabParam) ? normalizedTabParam : 'screen';
   const setTab = (next: Tab) => setTabParam(next);
 
   useEffect(() => {
@@ -155,7 +157,7 @@ export function PageDetailPanel({
                   : 'text-ink-muted hover:bg-bg-panel/60 hover:text-ink',
               )}
             >
-              {t}
+              {tabLabel(t)}
               {count != null && count > 0 && <span className="ml-1 text-ink-faint">({count})</span>}
             </button>
           );
@@ -165,9 +167,9 @@ export function PageDetailPanel({
       <div className="flex-1 overflow-auto">
         <div
           role="tabpanel"
-          id="tabpanel-overview"
-          aria-labelledby="tab-overview"
-          hidden={tab !== 'overview'}
+          id="tabpanel-screen"
+          aria-labelledby="tab-screen"
+          hidden={tab !== 'screen'}
         >
           <div className="p-4">
             {detail.page.screenshotPath ? (
@@ -180,7 +182,6 @@ export function PageDetailPanel({
             ) : (
               <div className="text-xs text-ink-muted">no screenshot</div>
             )}
-            <PerformanceSection metrics={detail.page.metrics} />
           </div>
         </div>
         <div
@@ -237,6 +238,16 @@ export function PageDetailPanel({
             {detail.errors.length === 0 && <li className="p-4 text-ink-muted">なし</li>}
           </ul>
         </div>
+        <div
+          role="tabpanel"
+          id="tabpanel-vitals"
+          aria-labelledby="tab-vitals"
+          hidden={tab !== 'vitals'}
+        >
+          <div className="p-4">
+            <PerformanceSection metrics={detail.page.metrics} />
+          </div>
+        </div>
       </div>
     </aside>
   );
@@ -244,6 +255,23 @@ export function PageDetailPanel({
 
 function isDetailTab(value: string): value is Tab {
   return DETAIL_TABS.includes(value as Tab);
+}
+
+function tabLabel(tab: Tab): string {
+  switch (tab) {
+    case 'screen':
+      return 'Screen';
+    case 'console':
+      return 'Console';
+    case 'network':
+      return 'Network';
+    case 'errors':
+      return 'Errors';
+    case 'routes':
+      return 'Routes';
+    case 'vitals':
+      return 'Vitals';
+  }
 }
 
 type MetricKey = 'lcp' | 'cls' | 'inp' | 'ttfb' | 'fcp';
@@ -617,6 +645,7 @@ function FilterBar(props: FilterBarProps) {
   return (
     <div className="flex flex-col gap-2 border-b border-line bg-bg-subtle px-3 py-2 text-[11px]">
       <input
+        data-inspector-filter="true"
         type="search"
         value={props.searchValue}
         onChange={(e) => props.onSearchChange(e.target.value)}
@@ -686,9 +715,13 @@ function Counter({ label, value, tone }: { label: string; value: number; tone: '
 
 /**
  * URL の query parameter と同期する string state。
- * read on first mount, write back on change (replace, no history push) で shareable URL を維持する。
+ * read on first mount, write back on change で shareable URL を維持する。
  */
-function useQueryParamState(key: string, defaultValue: string): [string, (v: string) => void] {
+function useQueryParamState(
+  key: string,
+  defaultValue: string,
+  opts: { history?: 'push' | 'replace' } = {},
+): [string, (v: string) => void] {
   const router = useRouter();
   const params = useSearchParams();
   const initial = params.get(key) ?? defaultValue;
@@ -707,7 +740,9 @@ function useQueryParamState(key: string, defaultValue: string): [string, (v: str
     const next = new URLSearchParams(params.toString());
     if (v === defaultValue) next.delete(key);
     else next.set(key, v);
-    router.replace(`?${next.toString()}`, { scroll: false });
+    const href = next.toString() ? `?${next.toString()}` : '?';
+    if (opts.history === 'push') router.push(href, { scroll: false });
+    else router.replace(href, { scroll: false });
   };
 
   return [value, update];
