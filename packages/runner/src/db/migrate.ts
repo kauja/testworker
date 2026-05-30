@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { log } from '@testworker/shared';
@@ -13,6 +14,62 @@ interface Migration {
   version: number;
   name: string;
   sql: string;
+}
+
+function appIdForOrigin(origin: string): string {
+  return `app_${createHash('sha1').update(origin).digest('hex').slice(0, 12)}`;
+}
+
+function originOf(rawUrl: string): string {
+  try {
+    return new URL(rawUrl).origin;
+  } catch {
+    return rawUrl;
+  }
+}
+
+function appNameForOrigin(origin: string): string {
+  try {
+    return new URL(origin).host || origin;
+  } catch {
+    return origin;
+  }
+}
+
+function backfillApps(db: ReturnType<typeof openDb>): void {
+  const hasApps = db.$sqlite
+    .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'apps'`)
+    .get();
+  if (!hasApps) return;
+  const runColumns = db.$sqlite.prepare(`PRAGMA table_info(runs)`).all() as Array<{ name: string }>;
+  if (!runColumns.some((column) => column.name === 'app_id')) return;
+
+  const rows = db.$sqlite
+    .prepare(
+      `SELECT id, start_url, started_at
+       FROM runs
+       WHERE app_id IS NULL
+       ORDER BY started_at ASC`,
+    )
+    .all() as Array<{ id: string; start_url: string; started_at: string }>;
+  if (rows.length === 0) return;
+
+  const tx = db.$sqlite.transaction(() => {
+    for (const row of rows) {
+      const origin = originOf(row.start_url);
+      const appId = appIdForOrigin(origin);
+      db.$sqlite
+        .prepare(
+          `INSERT INTO apps (id, name, origin_spec, entry_url, defaults_json, created_at)
+           VALUES (?, ?, ?, ?, '{}', ?)
+           ON CONFLICT(origin_spec) DO UPDATE SET
+             entry_url = COALESCE(apps.entry_url, excluded.entry_url)`,
+        )
+        .run(appId, appNameForOrigin(origin), origin, row.start_url, row.started_at);
+      db.$sqlite.prepare(`UPDATE runs SET app_id = ? WHERE id = ?`).run(appId, row.id);
+    }
+  });
+  tx();
 }
 
 function loadMigrations(): Migration[] {
@@ -56,6 +113,7 @@ export function migrate(dbPath: string): { applied: string[]; finalVersion: numb
       applied.push(m.name);
       log.info({ version: m.version, name: m.name }, 'migration applied');
     }
+    backfillApps(db);
     const final = (db.$sqlite.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
     return { applied, finalVersion: final };

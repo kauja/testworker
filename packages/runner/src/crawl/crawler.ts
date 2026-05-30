@@ -79,6 +79,7 @@ export async function runCrawl(
   const clog = childLog({ runId });
   const run: Run = {
     id: runId,
+    appId: null,
     startUrl: options.startUrl,
     status: 'running',
     startedAt,

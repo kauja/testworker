@@ -1,6 +1,14 @@
 import { cache } from 'react';
-import { fetchGraph, fetchRun, fetchRunDiff, fetchRunErrors, fetchRunStateGraphDiff } from './api';
+import {
+  fetchApp,
+  fetchGraph,
+  fetchRun,
+  fetchRunDiff,
+  fetchRunErrors,
+  fetchRunStateGraphDiff,
+} from './api';
 
+export const getApp = cache((appId: string) => fetchApp(appId));
 export const getRun = cache((runId: string) => fetchRun(runId));
 export const getGraph = cache((runId: string) => fetchGraph(runId));
 export const getRunErrors = cache((runId: string) => fetchRunErrors(runId));

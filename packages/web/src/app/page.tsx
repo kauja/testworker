@@ -1,7 +1,7 @@
-import { ApiError, fetchRuns } from '@/lib/api';
+import { ApiError, fetchApps } from '@/lib/api';
+import { AppList } from '@/components/app-list';
 import { NewRunForm } from '@/components/new-run-form';
 import { RetryButton } from '@/components/retry-button';
-import { RunList } from '@/components/run-list';
 import { RunsAutoRefresh } from '@/components/runs-auto-refresh';
 
 interface PageError {
@@ -11,10 +11,10 @@ interface PageError {
 }
 
 export default async function HomePage() {
-  let runs: Awaited<ReturnType<typeof fetchRuns>> = [];
+  let apps: Awaited<ReturnType<typeof fetchApps>> = [];
   let error: PageError | null = null;
   try {
-    runs = await fetchRuns();
+    apps = await fetchApps();
   } catch (e) {
     if (e instanceof ApiError) {
       error = { kind: e.kind, message: e.message, hint: e.hint };
@@ -22,16 +22,18 @@ export default async function HomePage() {
       error = { kind: 'http', message: e instanceof Error ? e.message : String(e) };
     }
   }
-  const hasActiveRun = runs.some((r) => r.run.status === 'queued' || r.run.status === 'running');
-  const recentUrls = Array.from(new Set(runs.map((r) => r.run.startUrl))).slice(0, 8);
+  const hasActiveRun = apps.some(
+    (a) => a.latestRun?.run.status === 'queued' || a.latestRun?.run.status === 'running',
+  );
+  const recentUrls = Array.from(new Set(apps.map((a) => a.app.entryUrl))).slice(0, 8);
 
   return (
     <div className="mx-auto max-w-screen-2xl px-6 py-10">
       {hasActiveRun && <RunsAutoRefresh />}
       <div className="mb-8">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">Runs</h1>
-          <p className="mt-1 text-sm text-ink-muted">クロール結果と新規 Run。</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Apps</h1>
+          <p className="mt-1 text-sm text-ink-muted">検査対象 App と新規 Run。</p>
         </div>
       </div>
 
@@ -39,13 +41,13 @@ export default async function HomePage() {
         <div className="min-w-0">
           {error && <ApiErrorBanner error={error} />}
 
-          {!error && runs.length === 0 && (
+          {!error && apps.length === 0 && (
             <div className="rounded-lg border border-dashed border-line bg-bg-subtle px-6 py-12 text-center text-sm text-ink-muted">
-              まだ run がありません。
+              まだ app がありません。
             </div>
           )}
 
-          <RunList runs={runs} />
+          <AppList apps={apps} />
         </div>
         <NewRunForm recentUrls={recentUrls} />
       </div>

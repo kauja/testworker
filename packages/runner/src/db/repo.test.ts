@@ -17,8 +17,18 @@ beforeEach(() => {
   const sqlite = new Database(':memory:');
   sqlite.pragma('foreign_keys = ON');
   sqlite.exec(`
+    CREATE TABLE apps (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      origin_spec TEXT NOT NULL UNIQUE,
+      entry_url TEXT NOT NULL,
+      defaults_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL
+    );
+
     CREATE TABLE runs (
       id TEXT PRIMARY KEY,
+      app_id TEXT,
       start_url TEXT NOT NULL,
       status TEXT NOT NULL,
       started_at TEXT NOT NULL,
@@ -95,6 +105,7 @@ afterEach(() => {
 
 const run = {
   id: 'run_1',
+  appId: null,
   startUrl: 'https://example.com',
   status: 'running' as const,
   startedAt: '2026-01-01T00:00:00.000Z',
@@ -134,12 +145,17 @@ describe('run repository writes', () => {
     insertRun(db, run);
 
     const row = db.$sqlite.prepare('SELECT * FROM runs WHERE id = ?').get('run_1') as {
+      app_id: string;
       options_json: string;
       start_url: string;
     };
 
+    expect(row.app_id).toBe('app_327c3fda87ce');
     expect(row.start_url).toBe('https://example.com');
     expect(JSON.parse(row.options_json)).toMatchObject({ maxDepth: 3, maxPages: 50 });
+    expect(db.$sqlite.prepare('SELECT origin_spec FROM apps').get()).toEqual({
+      origin_spec: 'https://example.com',
+    });
   });
 
   it('updates terminal run status fields', () => {
