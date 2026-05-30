@@ -112,6 +112,7 @@ const run = {
   finishedAt: null,
   options: {
     startUrl: 'https://example.com',
+    appName: 'Example App',
     maxDepth: 3,
     maxPages: 50,
     sameOriginOnly: true,
@@ -154,6 +155,7 @@ describe('run repository writes', () => {
     expect(row.app_id).toBe('app_327c3fda87ce');
     expect(row.start_url).toBe('https://example.com');
     expect(JSON.parse(row.options_json)).toMatchObject({ maxDepth: 3, maxPages: 50 });
+    expect(db.$sqlite.prepare('SELECT name FROM apps').get()).toEqual({ name: 'Example App' });
     expect(
       JSON.parse(
         (db.$sqlite.prepare('SELECT origin_spec FROM apps').get() as { origin_spec: string })

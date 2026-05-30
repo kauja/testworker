@@ -42,6 +42,7 @@ export type DeviceProfile = z.infer<typeof DeviceProfile>;
 
 export const CrawlOptions = z.object({
   startUrl: z.string().url(),
+  appName: z.string().min(1).max(120).optional(),
   maxDepth: z.number().int().min(0).max(20).default(3),
   maxPages: z.number().int().min(1).max(2000).default(50),
   /**
@@ -137,6 +138,7 @@ export type CrawlOptions = z.infer<typeof CrawlOptions>;
 
 export const RunLaunchInput = CrawlOptions.pick({
   startUrl: true,
+  appName: true,
   maxDepth: true,
   maxPages: true,
   originSpec: true,
@@ -156,6 +158,7 @@ export type RunLaunchInput = z.infer<typeof RunLaunchInput>;
 export const RunLaunchResponse = z.object({
   accepted: z.literal(true),
   acceptedAt: z.string(),
+  appId: z.string().optional(),
   options: RunLaunchInput,
 });
 export type RunLaunchResponse = z.infer<typeof RunLaunchResponse>;

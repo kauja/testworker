@@ -14,6 +14,7 @@ export function loadRunnerEnv(): RunnerEnv {
 export function optionsFromEnv(startUrl: string): CrawlOptions {
   return CrawlOptions.parse({
     startUrl,
+    appName: process.env.APP_NAME || undefined,
     maxDepth: numberFromEnv('MAX_DEPTH'),
     maxPages: numberFromEnv('MAX_PAGES'),
     originSpec: originSpecFromEnv(),

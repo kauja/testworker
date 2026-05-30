@@ -36,6 +36,10 @@ function appNameForOrigin(origin: string): string {
   }
 }
 
+function appNameForRun(run: Pick<Run, 'options'>, origin: string): string {
+  return run.options.appName?.trim() || appNameForOrigin(origin);
+}
+
 function tableExists(db: Db, tableName: string): boolean {
   return (
     db.$sqlite
@@ -53,7 +57,7 @@ export function upsertAppForRun(
   const originSpec = originSpecFromCrawlOptions(run.options);
   const app: App = {
     id: appIdForOrigin(origin),
-    name: appNameForOrigin(origin),
+    name: appNameForRun(run, origin),
     originSpec,
     entryUrl: run.startUrl,
     defaults: {},
@@ -64,8 +68,10 @@ export function upsertAppForRun(
       `INSERT INTO apps (id, name, origin_spec, entry_url, defaults_json, created_at)
        VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(origin_spec) DO UPDATE SET
+         name = COALESCE(NULLIF(excluded.name, ''), apps.name),
          entry_url = excluded.entry_url
        ON CONFLICT(id) DO UPDATE SET
+         name = COALESCE(NULLIF(excluded.name, ''), apps.name),
          origin_spec = excluded.origin_spec,
          entry_url = excluded.entry_url`,
     )
