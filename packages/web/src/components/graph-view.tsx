@@ -1,7 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   ReactFlow,
   Background,
@@ -19,6 +20,7 @@ import { harDownloadUrl } from '@/lib/api';
 import { computePageLabels } from '@/lib/page-label';
 import { PageNode } from './page-node';
 import { PageDetailPanel } from './page-detail-panel';
+import { useRunRoute } from './run-route-context';
 
 const NODE_W = 220;
 const NODE_H = 132;
@@ -52,15 +54,33 @@ function layout(pages: PageState[]): Record<string, { x: number; y: number }> {
 }
 
 export function GraphView({ graph }: { graph: GraphPayload }) {
+  const routeRun = useRunRoute();
+  const run = routeRun.id === graph.run.id ? routeRun : graph.run;
   // report 等から `/runs/<id>?page=<pid>` で deep-link されたときに initial 選択
   // 状態として反映する (#189)。 該当 page が graph に無ければ null。
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
-  const initialPageId = (() => {
+  const pageIds = useMemo(() => new Set(graph.pages.map((p) => p.id)), [graph.pages]);
+  const selectedFromUrl = (() => {
     const requested = searchParams.get('page');
     if (!requested) return null;
-    return graph.pages.some((p) => p.id === requested) ? requested : null;
+    return pageIds.has(requested) ? requested : null;
   })();
-  const [selectedId, setSelectedId] = useState<string | null>(initialPageId);
+  const [selectedId, setSelectedId] = useState<string | null>(selectedFromUrl);
+
+  useEffect(() => {
+    setSelectedId((current) => (current === selectedFromUrl ? current : selectedFromUrl));
+  }, [selectedFromUrl]);
+
+  const updateSelectedId = (pageId: string | null) => {
+    setSelectedId(pageId);
+    const next = new URLSearchParams(searchParams.toString());
+    if (pageId) next.set('page', pageId);
+    else next.delete('page');
+    const qs = next.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
   // ReactFlow v12 の MiniMap は viewport サイズに応じて SVG の shapeRendering
   // 属性を SSR と CSR で変える (`crispEdges` ↔ `geometricPrecision`) ため、
   // Next.js App Router の 'use client' コンポーネントでも SSR pass で
@@ -118,7 +138,7 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
       .slice(0, 5);
   }, [graph.pages]);
 
-  const isFailed = graph.run.status === 'failed' || graph.run.status === 'canceled';
+  const isFailed = run.status === 'failed' || run.status === 'canceled';
 
   return (
     <div className="relative grid h-full grid-cols-[1fr_360px]">
@@ -127,13 +147,13 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
           <div role="alert" className="border-b border-bad/40 bg-bad/10 px-6 py-3 text-xs text-bad">
             <div className="flex items-baseline justify-between gap-3">
               <div className="font-medium uppercase tracking-wider">
-                この run は {graph.run.status} 状態で終了しました
+                この run は {run.status} 状態で終了しました
               </div>
-              {graph.run.errorMessage && <CopyErrorButton message={graph.run.errorMessage} />}
+              {run.errorMessage && <CopyErrorButton message={run.errorMessage} />}
             </div>
-            {graph.run.errorMessage ? (
+            {run.errorMessage ? (
               <pre className="mt-1.5 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded border border-bad/30 bg-bg-panel/60 p-2 font-mono text-[11px] leading-relaxed">
-                {graph.run.errorMessage}
+                {run.errorMessage}
               </pre>
             ) : (
               <div className="mt-1.5 text-ink-muted">
@@ -156,7 +176,7 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
         )}
         <div className="relative flex-1">
           <div className="absolute left-4 top-4 z-10 flex items-center gap-3 rounded-md border border-line bg-bg-panel/80 px-3 py-2 text-xs backdrop-blur">
-            <span className="truncate text-ink-muted">{graph.run.startUrl}</span>
+            <span className="truncate text-ink-muted">{run.startUrl}</span>
             <span className="text-ink-faint">·</span>
             <span className="text-ink">{graph.pages.length} pages</span>
             <span className="text-ink-faint">·</span>
@@ -164,36 +184,36 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
             {errorTotal > 0 && (
               <>
                 <span className="text-ink-faint">·</span>
-                <a
-                  href={`/runs/${graph.run.id}/errors`}
+                <Link
+                  href={`/runs/${run.id}/errors`}
                   className="text-bad hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-bad"
                   title="エラーグループ表示 (Issue #88)"
                 >
                   {errorTotal} errors →
-                </a>
+                </Link>
               </>
             )}
             <span className="text-ink-faint">·</span>
-            <a
-              href={`/runs/${graph.run.id}/diff`}
+            <Link
+              href={`/runs/${run.id}/diff`}
               className="text-accent hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
               title="1 つ前の run との差分を表示 (Intent #125)"
             >
               diff →
-            </a>
+            </Link>
             <span className="text-ink-faint">·</span>
-            <a
-              href={`/runs/${graph.run.id}/report`}
+            <Link
+              href={`/runs/${run.id}/report`}
               className="text-ink-muted hover:text-accent hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
               title="静的レポート (印刷 / PDF 保存) Intent #127"
             >
               report →
-            </a>
+            </Link>
             <span className="text-ink-faint">·</span>
-            {graph.run.harPath ? (
+            {run.harPath ? (
               <a
-                href={harDownloadUrl(graph.run.id)}
-                download={`run-${graph.run.id}-network.har`}
+                href={harDownloadUrl(run.id)}
+                download={`run-${run.id}-network.har`}
                 className="text-ink-muted hover:text-accent hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
                 title="HAR (Chrome DevTools / Firefox にインポート可能) Issue #87"
               >
@@ -216,7 +236,7 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
             minZoom={0.2}
             maxZoom={2}
             proOptions={{ hideAttribution: true }}
-            onNodeClick={(_, n) => setSelectedId(n.id)}
+            onNodeClick={(_, n) => updateSelectedId(n.id)}
             aria-label="画面遷移グラフ (screen transition graph)"
           >
             <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#1c222b" />
@@ -257,7 +277,7 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
                       <li key={page.id}>
                         <button
                           type="button"
-                          onClick={() => setSelectedId(page.id)}
+                          onClick={() => updateSelectedId(page.id)}
                           className="grid w-full grid-cols-[1fr_auto] items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-bg-subtle focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
                         >
                           <span className="truncate text-ink-muted">{page.title || page.url}</span>
@@ -274,7 +294,7 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
           </ReactFlow>
         </div>
       </div>
-      <PageDetailPanel pageId={selectedId} onSelectPage={setSelectedId} />
+      <PageDetailPanel pageId={selectedId} onSelectPage={updateSelectedId} />
     </div>
   );
 }

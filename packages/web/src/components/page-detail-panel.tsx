@@ -7,7 +7,8 @@ import { assetUrl, fetchPage } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { TimeStamp } from './time-stamp';
 
-type Tab = 'overview' | 'console' | 'network' | 'errors' | 'routes';
+const DETAIL_TABS = ['overview', 'routes', 'console', 'network', 'errors'] as const;
+type Tab = (typeof DETAIL_TABS)[number];
 type ConsoleLevel = 'log' | 'info' | 'warn' | 'error' | 'debug';
 type NetStatusBucket = '2xx' | '3xx' | '4xx' | '5xx' | 'failed';
 
@@ -30,7 +31,9 @@ export function PageDetailPanel({
 }) {
   const [detail, setDetail] = useState<PageDetail | null>(null);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState<Tab>('overview');
+  const [tabParam, setTabParam] = useQueryParamState('tab', 'overview');
+  const tab = isDetailTab(tabParam) ? tabParam : 'overview';
+  const setTab = (next: Tab) => setTabParam(next);
 
   useEffect(() => {
     if (!pageId) {
@@ -107,16 +110,16 @@ export function PageDetailPanel({
         onKeyDown={(e) => {
           // 左右矢印 / Home / End で tab を移動する (Issue #106 / a11y)。
           // 矢印キーは roving tabindex 的に focus も次タブに移す。
-          const tabs: Tab[] = ['overview', 'routes', 'console', 'network', 'errors'];
-          const idx = tabs.indexOf(tab);
+          const idx = DETAIL_TABS.indexOf(tab);
           let nextIdx: number | null = null;
-          if (e.key === 'ArrowRight') nextIdx = (idx + 1) % tabs.length;
-          else if (e.key === 'ArrowLeft') nextIdx = (idx - 1 + tabs.length) % tabs.length;
+          if (e.key === 'ArrowRight') nextIdx = (idx + 1) % DETAIL_TABS.length;
+          else if (e.key === 'ArrowLeft')
+            nextIdx = (idx - 1 + DETAIL_TABS.length) % DETAIL_TABS.length;
           else if (e.key === 'Home') nextIdx = 0;
-          else if (e.key === 'End') nextIdx = tabs.length - 1;
+          else if (e.key === 'End') nextIdx = DETAIL_TABS.length - 1;
           if (nextIdx == null) return;
           e.preventDefault();
-          const next = tabs[nextIdx];
+          const next = DETAIL_TABS[nextIdx];
           if (!next) return;
           setTab(next);
           const el = e.currentTarget.querySelector<HTMLButtonElement>(`[data-tab="${next}"]`);
@@ -124,7 +127,7 @@ export function PageDetailPanel({
         }}
         className="flex gap-1 border-b border-line px-2 pt-2 text-xs"
       >
-        {(['overview', 'routes', 'console', 'network', 'errors'] as Tab[]).map((t) => {
+        {DETAIL_TABS.map((t) => {
           const count =
             t === 'routes'
               ? detail.incoming.length + detail.outgoing.length
@@ -237,6 +240,10 @@ export function PageDetailPanel({
       </div>
     </aside>
   );
+}
+
+function isDetailTab(value: string): value is Tab {
+  return DETAIL_TABS.includes(value as Tab);
 }
 
 type MetricKey = 'lcp' | 'cls' | 'inp' | 'ttfb' | 'fcp';

@@ -1,22 +1,14 @@
-import { notFound } from 'next/navigation';
-import { ApiError, fetchGraph, fetchRun } from '@/lib/api';
+import { getGraph, getRun } from '@/lib/server-api';
 import { GraphView } from '@/components/graph-view';
 import { AutoRefresh } from '@/components/auto-refresh';
 import { RunProgress } from '@/components/run-progress';
 
 export default async function RunPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-
-  let run;
-  try {
-    run = await fetchRun(id);
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 404) notFound();
-    throw err;
-  }
+  const run = await getRun(id);
 
   const isLive = run.status === 'running' || run.status === 'queued';
-  const graph = await fetchGraph(id).catch(() => null);
+  const graph = await getGraph(id).catch(() => null);
 
   return (
     <div className="h-[calc(100dvh-3rem)]">
