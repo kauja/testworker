@@ -27,6 +27,7 @@ import {
   insertConsoleBatch,
   insertEdge,
   insertErrorBatch,
+  insertErrorContextBatch,
   insertNetworkBatch,
   insertRun,
   updateRunHarPath,
@@ -38,6 +39,7 @@ import {
 } from '../db/repo.js';
 import { computeSignature } from './signature.js';
 import { collectInteractions, type Interaction } from './interactions.js';
+import { collectErrorContexts, installRootCauseRecorder } from './error-context.js';
 import { applyPageStateId, createMonitors } from './monitors.js';
 import { collectWebVitals, installWebVitals } from './web-vitals.js';
 import { applyCacheMode } from './cache.js';
@@ -129,6 +131,7 @@ export async function runCrawl(
     if (options.captureWebVitals) {
       await installWebVitals(context);
     }
+    await installRootCauseRecorder(context);
     // Issue #202: analytics / ads / font 等の不要リソースを abort する。
     // 何もブロックしない既定 run では route を登録しない (interception 無し = 完全後方互換)。
     if (hasResourceBlocking(options)) {
@@ -302,10 +305,26 @@ export async function runCrawl(
       }
 
       const snap = monitors.rotate();
-      const consoleErrCount = snap.console.filter((c) => c.level === 'error').length;
-      const networkErrCount = snap.network.filter((n) => n.failed || (n.status ?? 0) >= 400).length;
-      const errCount = snap.errors.length;
+      const consoleEntries = applyPageStateId(snap.console, pageStateId);
+      const networkEntries = applyPageStateId(snap.network, pageStateId);
+      const pageErrors = applyPageStateId(snap.errors, pageStateId);
+      const consoleErrCount = consoleEntries.filter((c) => c.level === 'error').length;
+      const networkErrCount = networkEntries.filter(
+        (n) => n.failed || (n.status ?? 0) >= 400,
+      ).length;
+      const errCount = pageErrors.length;
       const metrics = options.captureWebVitals ? await collectWebVitals(page) : {};
+      const errorContexts = await collectErrorContexts({
+        page,
+        context,
+        dataDir,
+        runId,
+        pageStateId,
+        errors: pageErrors,
+        consoleEntries,
+        networkEntries,
+        options,
+      });
 
       const screen: Screen = {
         id: screenId,
@@ -343,9 +362,10 @@ export async function runCrawl(
         metrics,
       };
       upsertPageState(db, pageState);
-      insertConsoleBatch(db, applyPageStateId(snap.console, pageStateId));
-      insertNetworkBatch(db, applyPageStateId(snap.network, pageStateId));
-      insertErrorBatch(db, applyPageStateId(snap.errors, pageStateId));
+      insertConsoleBatch(db, consoleEntries);
+      insertNetworkBatch(db, networkEntries);
+      insertErrorBatch(db, pageErrors);
+      insertErrorContextBatch(db, errorContexts);
 
       pageCount += 1;
 

@@ -41,6 +41,7 @@ async function main(): Promise<void> {
       block: { type: 'string', multiple: true },
       'network-throttle': { type: 'string' },
       'cpu-throttle': { type: 'string' },
+      'collect-storage': { type: 'boolean', default: false },
     },
     allowPositionals: true,
   });
@@ -96,6 +97,7 @@ async function main(): Promise<void> {
       ? { networkThrottle: parseNetworkThrottle(values['network-throttle']) }
       : {}),
     ...(values['cpu-throttle'] ? { cpuThrottle: Number(values['cpu-throttle']) } : {}),
+    ...(values['collect-storage'] ? { collectStorage: true } : {}),
   };
 
   const db = openDb(env.dbPath);

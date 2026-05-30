@@ -2,8 +2,16 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import type { ConsoleEntry, Edge, NetworkEntry, PageDetail, PageMetrics } from '@testworker/shared';
-import { assetUrl, fetchPage } from '@/lib/api';
+import type {
+  ConsoleEntry,
+  Edge,
+  ErrorContext,
+  NetworkEntry,
+  PageDetail,
+  PageError,
+  PageMetrics,
+} from '@testworker/shared';
+import { assetUrl, fetchErrorContext, fetchPage } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { TimeStamp } from './time-stamp';
 
@@ -222,7 +230,7 @@ export function PageDetailPanel({
         >
           <ul className="divide-y divide-line text-xs">
             {detail.errors.map((e) => (
-              <li key={e.id} className="px-4 py-2">
+              <li key={e.id} className="px-4 py-3">
                 <div className="flex items-center gap-2 text-[11px] text-ink-faint">
                   <span className="rounded bg-bad/15 px-1.5 py-0.5 text-bad">{e.kind}</span>
                   <TimeStamp value={e.timestamp} options={{ timeStyle: 'medium' }} />
@@ -233,6 +241,7 @@ export function PageDetailPanel({
                     {e.stack}
                   </pre>
                 )}
+                <RootCauseKit error={e} />
               </li>
             ))}
             {detail.errors.length === 0 && <li className="p-4 text-ink-muted">なし</li>}
@@ -250,6 +259,173 @@ export function PageDetailPanel({
         </div>
       </div>
     </aside>
+  );
+}
+
+function RootCauseKit({ error }: { error: PageError }) {
+  const [context, setContext] = useState<ErrorContext | null>(null);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [missing, setMissing] = useState(false);
+
+  const load = async () => {
+    if (context || loading || missing) {
+      setOpen((v) => !v);
+      return;
+    }
+    setOpen(true);
+    setLoading(true);
+    try {
+      setContext(await fetchErrorContext(error.id));
+    } catch {
+      setMissing(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-2 rounded border border-line bg-bg-panel/60">
+      <button
+        type="button"
+        onClick={load}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[11px] uppercase tracking-wider text-ink-faint hover:text-ink"
+      >
+        Root cause kit
+        <span aria-hidden>{open ? '−' : '+'}</span>
+      </button>
+      {open && (
+        <div className="space-y-3 border-t border-line px-3 py-3">
+          {loading && <div className="text-xs text-ink-muted">loading…</div>}
+          {missing && !loading && (
+            <div className="text-xs text-ink-muted">context はまだ保存されていません。</div>
+          )}
+          {context && <RootCauseContext context={context} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RootCauseContext({ context }: { context: ErrorContext }) {
+  return (
+    <div className="space-y-3 text-xs">
+      <section>
+        <div className="mb-1 text-[10px] uppercase tracking-wider text-ink-faint">
+          Symbolicated stack
+        </div>
+        {context.symbolicatedStack.length > 0 ? (
+          <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-bg-subtle p-2 font-mono text-[11px] text-ink-muted">
+            {context.symbolicatedStack.map((frame) => frame.raw).join('\n')}
+          </pre>
+        ) : (
+          <div className="text-ink-muted">stack なし</div>
+        )}
+      </section>
+      <ContextList
+        title="Last interactions"
+        empty="interaction なし"
+        items={context.recentInteractions.map((item) => ({
+          key: `${item.timestamp}-${item.kind}-${item.selector ?? ''}`,
+          meta: `${item.deltaMs}ms ${item.kind}`,
+          body: [item.selector, item.text, item.value, item.key].filter(Boolean).join(' · '),
+        }))}
+      />
+      <ContextList
+        title="Last network"
+        empty="network なし"
+        items={context.recentNetwork.map((item) => ({
+          key: item.id,
+          meta: `${item.deltaMs}ms ${item.method} ${item.status ?? (item.failed ? 'failed' : 'n/a')}`,
+          body: item.url,
+          tone: item.failed || (item.status ?? 0) >= 400 ? 'bad' : undefined,
+        }))}
+      />
+      <ContextList
+        title="Last console"
+        empty="console なし"
+        items={context.recentConsole.map((item) => ({
+          key: item.id,
+          meta: `${item.deltaMs}ms ${item.level}`,
+          body: item.text,
+          tone: item.level === 'error' ? 'bad' : undefined,
+        }))}
+      />
+      <section className="grid grid-cols-2 gap-2">
+        <AssetLink label="DOM snapshot" relPath={context.domSnapshotRef} />
+        <AssetLink label="Screenshot" relPath={context.screenshotRef} />
+      </section>
+      <section className="rounded border border-line bg-bg-subtle px-2 py-2 font-mono text-[10px] text-ink-muted">
+        {context.env.url}
+        <br />
+        {context.env.viewport.width}x{context.env.viewport.height} · DPR{' '}
+        {context.env.devicePixelRatio} · {context.env.timezone}
+      </section>
+      {context.storage && (
+        <section className="rounded border border-warn/40 bg-warn/10 px-2 py-2 text-[10px] text-warn">
+          storage snapshot: local {Object.keys(context.storage.localStorage).length} / session{' '}
+          {Object.keys(context.storage.sessionStorage).length} / cookies{' '}
+          {context.storage.cookies.length}
+        </section>
+      )}
+    </div>
+  );
+}
+
+function ContextList({
+  title,
+  empty,
+  items,
+}: {
+  title: string;
+  empty: string;
+  items: Array<{ key: string; meta: string; body: string; tone?: 'bad' }>;
+}) {
+  return (
+    <section>
+      <div className="mb-1 text-[10px] uppercase tracking-wider text-ink-faint">{title}</div>
+      {items.length === 0 ? (
+        <div className="text-ink-muted">{empty}</div>
+      ) : (
+        <ul className="space-y-1">
+          {items.map((item) => (
+            <li key={item.key} className="rounded border border-line bg-bg-subtle px-2 py-1.5">
+              <div
+                className={cn(
+                  'font-mono text-[10px]',
+                  item.tone === 'bad' ? 'text-bad' : 'text-ink-faint',
+                )}
+              >
+                {item.meta}
+              </div>
+              <div className="mt-0.5 break-words font-mono text-[11px] text-ink-muted">
+                {item.body || '(empty)'}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function AssetLink({ label, relPath }: { label: string; relPath: string | null }) {
+  if (!relPath) {
+    return (
+      <div className="rounded border border-line bg-bg-subtle px-2 py-2 text-center text-[11px] text-ink-muted">
+        {label}: none
+      </div>
+    );
+  }
+  return (
+    <a
+      href={assetUrl(relPath)}
+      target="_blank"
+      rel="noreferrer"
+      className="rounded border border-line bg-bg-subtle px-2 py-2 text-center text-[11px] text-accent hover:border-accent"
+    >
+      {label}
+    </a>
   );
 }
 

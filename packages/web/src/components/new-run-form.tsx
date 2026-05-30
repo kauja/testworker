@@ -88,6 +88,7 @@ export function NewRunForm({ recentUrls }: { recentUrls: string[] }) {
           excludeUrlPatterns: splitPatterns(excludePatterns),
           userAgent: userAgent.trim() || undefined,
           captureWebVitals,
+          collectStorage: false,
         });
         setMessage({ tone: 'ok', text: 'Run を起動しました。' });
         setIsOpen(false);

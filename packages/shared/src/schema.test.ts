@@ -25,6 +25,7 @@ describe('CrawlOptions', () => {
       cacheMode: 'warm',
       networkThrottle: 'none',
       cpuThrottle: 1,
+      collectStorage: false,
       deviceProfile: 'desktop',
     });
   });

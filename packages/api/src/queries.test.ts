@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import { log } from '@testworker/shared';
 import {
   getGraph,
+  getErrorContext,
   getRunDiff,
   getRunErrors,
   getRunStateGraphDiff,
@@ -372,6 +373,59 @@ describe('listApps', () => {
     expect(apps[0]!.runCount).toBe(2);
     expect(apps[0]!.latestRun?.run.id).toBe('run_new');
     expect(apps[0]!.totalErrorCount).toBe(6);
+    db.close();
+  });
+});
+
+describe('getErrorContext', () => {
+  it('parses saved root cause kit payloads', () => {
+    const db = new Database(':memory:');
+    db.exec(`
+      CREATE TABLE error_contexts (
+        error_id TEXT PRIMARY KEY,
+        payload_json TEXT NOT NULL,
+        dom_ref TEXT,
+        screenshot_ref TEXT,
+        created_at TEXT NOT NULL
+      );
+    `);
+    db.prepare(`INSERT INTO error_contexts VALUES (?, ?, ?, ?, ?)`).run(
+      'err_1',
+      JSON.stringify({
+        errorId: 'err_1',
+        pageStateId: 'page_1',
+        capturedAt: '2026-01-01T00:00:00.000Z',
+        message: 'boom',
+        stack: null,
+        symbolicatedStack: [],
+        recentInteractions: [],
+        recentNetwork: [],
+        recentConsole: [],
+        domSnapshotRef: 'runs/run_1/errors/err_1/dom.html',
+        screenshotRef: null,
+        env: {
+          url: 'https://example.com',
+          pathname: '/',
+          search: '',
+          hash: '',
+          viewport: { width: 1280, height: 800 },
+          devicePixelRatio: 1,
+          userAgent: 'vitest',
+          language: 'ja',
+          timezone: 'Asia/Tokyo',
+        },
+        storage: null,
+      }),
+      'runs/run_1/errors/err_1/dom.html',
+      null,
+      '2026-01-01T00:00:00.000Z',
+    );
+
+    expect(getErrorContext(db, 'err_1')).toMatchObject({
+      errorId: 'err_1',
+      domSnapshotRef: 'runs/run_1/errors/err_1/dom.html',
+    });
+    expect(getErrorContext(db, 'missing')).toBeNull();
     db.close();
   });
 });

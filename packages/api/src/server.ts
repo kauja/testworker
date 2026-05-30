@@ -8,6 +8,7 @@ import { RunLaunchInput, log } from '@testworker/shared';
 import { openReadDb } from './db.js';
 import {
   getErrorGroups,
+  getErrorContext,
   getAppDetail,
   getGraph,
   getPageDetail,
@@ -108,6 +109,7 @@ app.use('/runs', cors({ origin: CORS_ORIGIN }));
 app.use('/runs/*', cors({ origin: CORS_ORIGIN }));
 app.use('/apps', cors({ origin: CORS_ORIGIN }));
 app.use('/apps/*', cors({ origin: CORS_ORIGIN }));
+app.use('/errors/*', cors({ origin: CORS_ORIGIN }));
 app.use('/pages/*', cors({ origin: CORS_ORIGIN }));
 
 app.get('/health', (c) => c.json({ ok: true, dbReady: dbInstance !== null }));
@@ -313,6 +315,14 @@ app.get('/runs/:id/errors', (c) => {
   const errors = getRunErrors(db, c.req.param('id'));
   if (errors == null) return c.json({ error: 'not_found' }, 404);
   return c.json(errors);
+});
+
+app.get('/errors/:id/context', (c) => {
+  const db = ensureDb();
+  if (!db) return c.json(DB_NOT_READY_BODY, 503);
+  const context = getErrorContext(db, c.req.param('id'));
+  if (!context) return c.json({ error: 'not_found' }, 404);
+  return c.json(context);
 });
 
 app.get('/runs/:id/diff', (c) => {

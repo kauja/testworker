@@ -131,6 +131,7 @@ const run = {
     cacheMode: 'warm' as const,
     networkThrottle: 'none' as const,
     cpuThrottle: 1,
+    collectStorage: false,
     deviceProfile: 'desktop' as const,
   },
   errorMessage: null,
