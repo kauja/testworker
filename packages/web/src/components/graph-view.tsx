@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   ReactFlow,
@@ -14,12 +14,12 @@ import {
   type Edge as RFEdge,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import type { GraphPayload, PageState } from '@testworker/shared';
+import type { Edge, GraphPayload, PageState } from '@testworker/shared';
 import { cn } from '@/lib/cn';
 import { harDownloadUrl } from '@/lib/api';
 import { computePageLabels } from '@/lib/page-label';
 import { PageNode } from './page-node';
-import { PageDetailPanel } from './page-detail-panel';
+import { DETAIL_TABS, PageDetailPanel, type DetailTab } from './page-detail-panel';
 import { useRunRoute } from './run-route-context';
 
 const NODE_W = 220;
@@ -62,25 +62,55 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const pageIds = useMemo(() => new Set(graph.pages.map((p) => p.id)), [graph.pages]);
+  const sortedPages = useMemo(
+    () => [...graph.pages].sort((a, b) => a.visitedAt.localeCompare(b.visitedAt)),
+    [graph.pages],
+  );
   const selectedFromUrl = (() => {
-    const requested = searchParams.get('page');
+    const requested = searchParams.get('node') ?? searchParams.get('page');
     if (!requested) return null;
     return pageIds.has(requested) ? requested : null;
   })();
-  const [selectedId, setSelectedId] = useState<string | null>(selectedFromUrl);
+  const effectiveSelectedId = selectedFromUrl ?? sortedPages[0]?.id ?? null;
+  const [selectedId, setSelectedId] = useState<string | null>(effectiveSelectedId);
+  const selectedPage = useMemo(
+    () => graph.pages.find((page) => page.id === selectedId) ?? null,
+    [graph.pages, selectedId],
+  );
 
   useEffect(() => {
-    setSelectedId((current) => (current === selectedFromUrl ? current : selectedFromUrl));
-  }, [selectedFromUrl]);
+    setSelectedId((current) => (current === effectiveSelectedId ? current : effectiveSelectedId));
+  }, [effectiveSelectedId]);
 
-  const updateSelectedId = (pageId: string | null) => {
-    setSelectedId(pageId);
-    const next = new URLSearchParams(searchParams.toString());
-    if (pageId) next.set('page', pageId);
-    else next.delete('page');
-    const qs = next.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-  };
+  const pushSearchParams = useCallback(
+    (next: URLSearchParams) => {
+      const qs = next.toString();
+      router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router],
+  );
+
+  const updateSelectedId = useCallback(
+    (pageId: string | null, nextTab?: DetailTab) => {
+      setSelectedId(pageId);
+      const next = new URLSearchParams(searchParams.toString());
+      if (pageId) next.set('node', pageId);
+      else next.delete('node');
+      next.delete('page');
+      if (nextTab) next.set('tab', nextTab);
+      pushSearchParams(next);
+    },
+    [pushSearchParams, searchParams],
+  );
+
+  const updateTab = useCallback(
+    (tab: DetailTab) => {
+      const next = new URLSearchParams(searchParams.toString());
+      next.set('tab', tab);
+      pushSearchParams(next);
+    },
+    [pushSearchParams, searchParams],
+  );
   // ReactFlow v12 の MiniMap は viewport サイズに応じて SVG の shapeRendering
   // 属性を SSR と CSR で変える (`crispEdges` ↔ `geometricPrecision`) ため、
   // Next.js App Router の 'use client' コンポーネントでも SSR pass で
@@ -90,6 +120,46 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
   // minimap は 22 pages 程度の run でも画面の 1/4 弱を占め、 graph 本体に被る (#166)。
   // default off + toggle で「観察」 と「俯瞰」 を分離する。 m キーでも toggle 可。
   const [minimapVisible, setMinimapVisible] = useState(false);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      ) {
+        return;
+      }
+      if (event.key === '/') {
+        event.preventDefault();
+        document.querySelector<HTMLInputElement>('[data-inspector-filter="true"]')?.focus();
+        return;
+      }
+      if (event.key === 'j' || event.key === 'k') {
+        if (sortedPages.length === 0) return;
+        event.preventDefault();
+        const currentIdx = Math.max(
+          0,
+          selectedId ? sortedPages.findIndex((page) => page.id === selectedId) : 0,
+        );
+        const delta = event.key === 'j' ? 1 : -1;
+        const nextIdx = (currentIdx + delta + sortedPages.length) % sortedPages.length;
+        const nextPage = sortedPages[nextIdx];
+        if (nextPage) updateSelectedId(nextPage.id);
+        return;
+      }
+      if (/^[1-6]$/.test(event.key)) {
+        const tab = DETAIL_TABS[Number(event.key) - 1];
+        if (!tab) return;
+        event.preventDefault();
+        updateTab(tab);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedId, sortedPages, updateSelectedId, updateTab]);
 
   const nodes = useMemo<Node[]>(() => {
     const positions = layout(graph.pages);
@@ -117,6 +187,10 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
         target: e.toPageStateId,
         animated: e.trigger === 'spa-route' || e.trigger === 'spa-dom',
         label: e.trigger,
+        style: {
+          stroke: e.kind === 'state' ? '#f3b34c' : '#7c9cff',
+          strokeDasharray: e.kind === 'state' ? '5 5' : undefined,
+        },
         labelStyle: { fontSize: 10, fill: '#8d96a3' },
         labelBgStyle: { fill: '#15191f' },
       })),
@@ -141,90 +215,81 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
   const isFailed = run.status === 'failed' || run.status === 'canceled';
 
   return (
-    <div className="relative grid h-full grid-cols-[1fr_360px]">
-      <div className="flex h-full flex-col">
-        {isFailed && (
-          <div role="alert" className="border-b border-bad/40 bg-bad/10 px-6 py-3 text-xs text-bad">
-            <div className="flex items-baseline justify-between gap-3">
-              <div className="font-medium uppercase tracking-wider">
-                この run は {run.status} 状態で終了しました
-              </div>
-              {run.errorMessage && <CopyErrorButton message={run.errorMessage} />}
+    <div className="flex h-full min-h-0 flex-col bg-bg">
+      {isFailed && (
+        <div role="alert" className="border-b border-bad/40 bg-bad/10 px-4 py-2 text-xs text-bad">
+          <div className="flex items-baseline justify-between gap-3">
+            <div className="font-medium uppercase tracking-wider">
+              この run は {run.status} 状態で終了しました
             </div>
-            {run.errorMessage ? (
-              <pre className="mt-1.5 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded border border-bad/30 bg-bg-panel/60 p-2 font-mono text-[11px] leading-relaxed">
-                {run.errorMessage}
-              </pre>
-            ) : (
-              <div className="mt-1.5 text-ink-muted">
-                error message が記録されていません。 runner のログ (<code>make logs</code>)
-                を確認してください。
-              </div>
-            )}
-            <div className="mt-1.5 text-[10px] text-ink-muted">
-              関連:{' '}
-              <a
-                href="https://github.com/kauja/testworker/blob/main/docs/troubleshooting.md"
-                className="underline hover:text-accent"
-                target="_blank"
-                rel="noreferrer"
-              >
-                docs/troubleshooting.md
-              </a>
-            </div>
+            {run.errorMessage && <CopyErrorButton message={run.errorMessage} />}
           </div>
-        )}
-        <div className="relative flex-1">
-          <div className="absolute left-4 top-4 z-10 flex items-center gap-3 rounded-md border border-line bg-bg-panel/80 px-3 py-2 text-xs backdrop-blur">
-            <span className="truncate text-ink-muted">{run.startUrl}</span>
-            <span className="text-ink-faint">·</span>
-            <span className="text-ink">{graph.pages.length} pages</span>
-            <span className="text-ink-faint">·</span>
-            <span className="text-ink">{graph.edges.length} edges</span>
-            {errorTotal > 0 && (
-              <>
-                <span className="text-ink-faint">·</span>
-                <Link
-                  href={`/runs/${run.id}/errors`}
-                  className="text-bad hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-bad"
-                  title="エラーグループ表示 (Issue #88)"
-                >
-                  {errorTotal} errors →
-                </Link>
-              </>
+          {run.errorMessage ? (
+            <pre className="mt-1.5 max-h-24 overflow-auto whitespace-pre-wrap break-words rounded border border-bad/30 bg-bg-panel/60 p-2 font-mono text-[11px] leading-relaxed">
+              {run.errorMessage}
+            </pre>
+          ) : (
+            <div className="mt-1.5 text-ink-muted">
+              error message が記録されていません。 runner のログ (<code>make logs</code>)
+              を確認してください。
+            </div>
+          )}
+        </div>
+      )}
+      <header className="sticky top-0 z-20 flex min-h-12 items-center justify-between gap-4 border-b border-line bg-bg-subtle px-4 text-xs">
+        <div className="min-w-0">
+          <div className="truncate font-medium text-ink">{run.startUrl}</div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wider text-ink-faint">
+            <span>{run.status}</span>
+            <span>{graph.pages.length} pages</span>
+            <span>{graph.edges.length} edges</span>
+            {selectedPage && (
+              <span>node {sortedPages.findIndex((p) => p.id === selectedPage.id) + 1}</span>
             )}
-            <span className="text-ink-faint">·</span>
+          </div>
+        </div>
+        <nav className="flex shrink-0 items-center gap-3 text-xs" aria-label="run inspector links">
+          {errorTotal > 0 && (
             <Link
-              href={`/runs/${run.id}/diff`}
-              className="text-accent hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-              title="1 つ前の run との差分を表示 (Intent #125)"
+              href={`/runs/${run.id}/errors`}
+              className="text-bad hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-bad"
+              title="エラーグループ表示 (Issue #88)"
             >
-              diff →
+              {errorTotal} errors
             </Link>
-            <span className="text-ink-faint">·</span>
-            <Link
-              href={`/runs/${run.id}/report`}
+          )}
+          <Link
+            href={`/runs/${run.id}/diff`}
+            className="text-accent hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+            title="1 つ前の run との差分を表示 (Intent #125)"
+          >
+            diff
+          </Link>
+          <Link
+            href={`/runs/${run.id}/report`}
+            className="text-ink-muted hover:text-accent hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+            title="静的レポート (印刷 / PDF 保存) Intent #127"
+          >
+            report
+          </Link>
+          {run.harPath ? (
+            <a
+              href={harDownloadUrl(run.id)}
+              download={`run-${run.id}-network.har`}
               className="text-ink-muted hover:text-accent hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-              title="静的レポート (印刷 / PDF 保存) Intent #127"
+              title="HAR (Chrome DevTools / Firefox にインポート可能) Issue #87"
             >
-              report →
-            </Link>
-            <span className="text-ink-faint">·</span>
-            {run.harPath ? (
-              <a
-                href={harDownloadUrl(run.id)}
-                download={`run-${run.id}-network.har`}
-                className="text-ink-muted hover:text-accent hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-                title="HAR (Chrome DevTools / Firefox にインポート可能) Issue #87"
-              >
-                HAR ↓
-              </a>
-            ) : (
-              <span className="text-ink-faint" title="HAR は記録されていません (旧 run / 失敗 run)">
-                HAR —
-              </span>
-            )}
-          </div>
+              HAR
+            </a>
+          ) : (
+            <span className="text-ink-faint" title="HAR は記録されていません (旧 run / 失敗 run)">
+              HAR
+            </span>
+          )}
+        </nav>
+      </header>
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,7fr)_minmax(320px,3fr)]">
+        <div className="relative min-h-0">
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -293,8 +358,98 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
             )}
           </ReactFlow>
         </div>
+        <PageDetailPanel pageId={selectedId} onSelectPage={updateSelectedId} />
       </div>
-      <PageDetailPanel pageId={selectedId} onSelectPage={updateSelectedId} />
+      <InspectorTimeline
+        pages={sortedPages}
+        edges={graph.edges}
+        selectedId={selectedId}
+        onSelectPage={updateSelectedId}
+      />
+    </div>
+  );
+}
+
+function InspectorTimeline({
+  pages,
+  edges,
+  selectedId,
+  onSelectPage,
+}: {
+  pages: PageState[];
+  edges: Edge[];
+  selectedId: string | null;
+  onSelectPage: (pageId: string, tab?: DetailTab) => void;
+}) {
+  const firstMs = pages.length > 0 ? Date.parse(pages[0]!.visitedAt) : 0;
+  const lastMs =
+    pages.length > 0 ? Math.max(...pages.map((page) => Date.parse(page.visitedAt))) : firstMs;
+  const spanMs = Math.max(1, lastMs - firstMs);
+  const outgoingByPage = useMemo(() => {
+    const map = new Map<string, Edge[]>();
+    for (const edge of edges) {
+      const current = map.get(edge.fromPageStateId) ?? [];
+      current.push(edge);
+      map.set(edge.fromPageStateId, current);
+    }
+    return map;
+  }, [edges]);
+
+  return (
+    <div className="border-t border-line bg-bg-subtle px-4 py-2 text-[10px]">
+      <div className="relative h-16 overflow-x-auto overflow-y-hidden">
+        <div className="relative h-full min-w-[720px]">
+          {pages.map((page, idx) => {
+            const left = ((Date.parse(page.visitedAt) - firstMs) / spanMs) * 92;
+            const totalErrors = page.errorCount + page.consoleErrorCount + page.networkErrorCount;
+            const edgeKinds = outgoingByPage.get(page.id)?.map((edge) => edge.kind) ?? [];
+            const nextTab: DetailTab =
+              totalErrors > 0
+                ? 'errors'
+                : page.consoleErrorCount > 0
+                  ? 'console'
+                  : page.networkErrorCount > 0
+                    ? 'network'
+                    : 'screen';
+            return (
+              <button
+                key={page.id}
+                type="button"
+                onClick={() => onSelectPage(page.id, nextTab)}
+                className={cn(
+                  'absolute top-5 h-8 min-w-24 rounded border px-2 text-left transition-colors',
+                  selectedId === page.id
+                    ? 'border-accent bg-accent/15 text-accent'
+                    : totalErrors > 0
+                      ? 'border-bad/40 bg-bad/10 text-bad hover:border-bad'
+                      : 'border-line bg-bg-panel text-ink-muted hover:border-accent-soft hover:text-ink',
+                )}
+                style={{ left: `${left}%` }}
+                title={page.url}
+              >
+                <span className="block truncate font-mono">#{idx + 1}</span>
+                <span className="block truncate">{page.title || page.url}</span>
+                {edgeKinds.length > 0 && (
+                  <span className="absolute -top-4 left-1 flex gap-1 text-[9px] uppercase tracking-wider">
+                    {Array.from(new Set(edgeKinds)).map((kind) => (
+                      <span
+                        key={kind}
+                        className={cn(
+                          'rounded px-1',
+                          kind === 'state' ? 'bg-warn/15 text-warn' : 'bg-accent/15 text-accent',
+                        )}
+                      >
+                        {kind}
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+          <div className="pointer-events-none absolute left-0 right-0 top-[2.15rem] border-t border-line" />
+        </div>
+      </div>
     </div>
   );
 }
