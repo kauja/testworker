@@ -4,6 +4,7 @@ import { ApiError } from '@/lib/api';
 import { getApp, getGraph } from '@/lib/server-api';
 import { GraphView } from '@/components/graph-view';
 import { RunRouteProvider } from '@/components/run-route-context';
+import { formatOriginSpec } from '@/lib/origin-spec';
 
 export default async function AppPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -22,7 +23,9 @@ export default async function AppPage({ params }: { params: Promise<{ id: string
       <div className="mx-auto max-w-screen-lg px-6 py-10">
         <div className="mb-6">
           <h1 className="text-2xl font-semibold tracking-tight">{detail.app.name}</h1>
-          <p className="mt-1 font-mono text-sm text-ink-muted">{detail.app.originSpec}</p>
+          <p className="mt-1 font-mono text-sm text-ink-muted">
+            {formatOriginSpec(detail.app.originSpec)}
+          </p>
         </div>
         <div className="rounded-lg border border-line bg-bg-subtle px-6 py-10 text-center text-sm text-ink-muted">
           run snapshot がまだありません。

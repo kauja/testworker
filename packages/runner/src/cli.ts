@@ -19,6 +19,7 @@ async function main(): Promise<void> {
       url: { type: 'string' },
       'max-depth': { type: 'string' },
       'max-pages': { type: 'string' },
+      'origin-spec': { type: 'string' },
       'nav-timeout-ms': { type: 'string' },
       'wait-after-nav-ms': { type: 'string' },
       'wait-strategy': { type: 'string' },
@@ -59,6 +60,7 @@ async function main(): Promise<void> {
     startUrl,
     ...(values['max-depth'] ? { maxDepth: Number(values['max-depth']) } : {}),
     ...(values['max-pages'] ? { maxPages: Number(values['max-pages']) } : {}),
+    ...(values['origin-spec'] ? { originSpec: parseOriginSpec(values['origin-spec']) } : {}),
     ...(values['nav-timeout-ms'] ? { navTimeoutMs: Number(values['nav-timeout-ms']) } : {}),
     ...(values['wait-after-nav-ms'] ? { waitAfterNavMs: Number(values['wait-after-nav-ms']) } : {}),
     ...(values['wait-strategy']
@@ -106,6 +108,15 @@ async function main(): Promise<void> {
     log.info({ runId: report.run.id, pages: report.pages, edges: report.edges }, 'crawl done');
   } finally {
     db.close();
+  }
+}
+
+function parseOriginSpec(raw: string): CrawlOptions['originSpec'] {
+  try {
+    return CrawlOptions.shape.originSpec.parse(JSON.parse(raw));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`invalid --origin-spec JSON: ${message}`);
   }
 }
 

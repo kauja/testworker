@@ -1,5 +1,6 @@
 import type { Db } from './client.js';
 import { createHash } from 'node:crypto';
+import { originSpecFromCrawlOptions, serializeOriginSpec } from '@testworker/shared';
 import type {
   App,
   ArrivalTrigger,
@@ -42,13 +43,17 @@ function tableExists(db: Db, tableName: string): boolean {
   );
 }
 
-export function upsertAppForRun(db: Db, run: Pick<Run, 'startUrl' | 'startedAt'>): App | null {
+export function upsertAppForRun(
+  db: Db,
+  run: Pick<Run, 'startUrl' | 'startedAt' | 'options'>,
+): App | null {
   if (!tableExists(db, 'apps')) return null;
   const origin = originOf(run.startUrl);
+  const originSpec = originSpecFromCrawlOptions(run.options);
   const app: App = {
     id: appIdForOrigin(origin),
     name: appNameForOrigin(origin),
-    originSpec: origin,
+    originSpec,
     entryUrl: run.startUrl,
     defaults: {},
     createdAt: run.startedAt,
@@ -58,12 +63,15 @@ export function upsertAppForRun(db: Db, run: Pick<Run, 'startUrl' | 'startedAt'>
       `INSERT INTO apps (id, name, origin_spec, entry_url, defaults_json, created_at)
        VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(origin_spec) DO UPDATE SET
+         entry_url = excluded.entry_url
+       ON CONFLICT(id) DO UPDATE SET
+         origin_spec = excluded.origin_spec,
          entry_url = excluded.entry_url`,
     )
     .run(
       app.id,
       app.name,
-      app.originSpec,
+      serializeOriginSpec(app.originSpec),
       app.entryUrl,
       JSON.stringify(app.defaults),
       app.createdAt,

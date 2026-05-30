@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { AppSummary } from '@testworker/shared';
 import { cn } from '@/lib/cn';
+import { formatOriginSpec } from '@/lib/origin-spec';
 import { RunProgress } from './run-progress';
 import { TimeStamp } from './time-stamp';
 
@@ -32,7 +33,7 @@ export function AppList({ apps }: { apps: AppSummary[] }) {
               <div className="min-w-0">
                 <div className="truncate font-medium text-ink">{summary.app.name}</div>
                 <div className="mt-1 truncate font-mono text-xs text-ink-faint">
-                  {summary.app.originSpec}
+                  {formatOriginSpec(summary.app.originSpec)}
                 </div>
               </div>
               <span

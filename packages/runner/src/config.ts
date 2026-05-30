@@ -1,4 +1,4 @@
-import { CrawlOptions, NetworkThrottlePreset } from '@testworker/shared';
+import { CrawlOptions, NetworkThrottlePreset, OriginSpec } from '@testworker/shared';
 
 export interface RunnerEnv {
   dataDir: string;
@@ -16,6 +16,7 @@ export function optionsFromEnv(startUrl: string): CrawlOptions {
     startUrl,
     maxDepth: numberFromEnv('MAX_DEPTH'),
     maxPages: numberFromEnv('MAX_PAGES'),
+    originSpec: originSpecFromEnv(),
     sameOriginOnly: boolFromEnv('SAME_ORIGIN_ONLY'),
     respectRobots: boolFromEnv('RESPECT_ROBOTS'),
     navTimeoutMs: numberFromEnv('NAV_TIMEOUT_MS'),
@@ -34,6 +35,17 @@ export function optionsFromEnv(startUrl: string): CrawlOptions {
     loginScriptPath: process.env.LOGIN_SCRIPT_PATH || undefined,
     userAgent: process.env.USER_AGENT || undefined,
   });
+}
+
+function originSpecFromEnv(): OriginSpec | undefined {
+  const raw = process.env.ORIGIN_SPEC_JSON;
+  if (!raw) return undefined;
+  try {
+    const parsed = OriginSpec.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function networkThrottleFromEnv(): NetworkThrottlePreset | undefined {

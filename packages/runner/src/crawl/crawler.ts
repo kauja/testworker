@@ -8,6 +8,7 @@ import {
   newRunId,
   newScreenId,
   newScreenStateId,
+  originSpecFromCrawlOptions,
   type Edge,
   type NavigationTrigger,
   type PageState,
@@ -47,6 +48,7 @@ import { autoScroll } from './auto-scroll.js';
 import { hasResourceBlocking, installResourceBlocking } from './resource-block.js';
 import { loadInjectScript } from './inject.js';
 import { resolveDeviceProfile } from './devices.js';
+import { isAllowedOrigin } from './origin-spec.js';
 
 const DEFAULT_ROBOTS_UA = 'testworker';
 
@@ -72,7 +74,12 @@ export async function runCrawl(
   dataDir: string,
   rawOptions: Partial<CrawlOptions> & { startUrl: string },
 ): Promise<CrawlReport> {
-  const options = CrawlOptions.parse(rawOptions);
+  const parsedOptions = CrawlOptions.parse(rawOptions);
+  const originSpec = originSpecFromCrawlOptions(parsedOptions);
+  const options: CrawlOptions = {
+    ...parsedOptions,
+    originSpec,
+  };
   const runId = newRunId();
   const startedAt = new Date().toISOString();
   // child logger に runId を bake して、 全 log 行に runId を載せる (Issue #92)。
@@ -168,7 +175,6 @@ export async function runCrawl(
       await login({ page, context });
     }
 
-    const startOrigin = new URL(options.startUrl).origin;
     const visitedSignatures = new Set<string>();
     // robots.txt キャッシュ。 origin ごとに 1 回だけ fetch。 fail-open。
     const robotsUserAgent = options.userAgent ?? DEFAULT_ROBOTS_UA;
@@ -199,13 +205,7 @@ export async function runCrawl(
       // include-exclude で弾かれても currentUrl は「次に試行している URL」として正しい。
       updateRunProgress(db, runId, pageCount, frontier.length + 1, task.url);
       if (task.depth > options.maxDepth) continue;
-      if (options.sameOriginOnly) {
-        try {
-          if (new URL(task.url).origin !== startOrigin) continue;
-        } catch {
-          continue;
-        }
-      }
+      if (!isAllowedOrigin(task.url, originSpec, options.startUrl)) continue;
       if (!urlMatches(task.url, options)) continue;
 
       // robots.txt の Disallow に該当する URL は queue から落とす (Issue #101)。
@@ -237,21 +237,12 @@ export async function runCrawl(
         monitors.rotate();
         continue;
       }
-      // post-goto の same-origin check (Issue #93)。 pre-goto は task.url で
-      // 弾くが、 30x で外部 origin に redirect された場合は page.url() が startOrigin
-      // と一致しない。 sameOriginOnly が有効なら破棄して continue。
-      if (options.sameOriginOnly) {
-        let landedOrigin: string | null = null;
-        try {
-          landedOrigin = new URL(page.url()).origin;
-        } catch {
-          landedOrigin = null;
-        }
-        if (landedOrigin !== startOrigin) {
-          clog.warn({ from: task.url, to: page.url() }, 'cross-origin redirect skipped');
-          monitors.rotate();
-          continue;
-        }
+      // post-goto の scope check (Issue #93 / #182)。 pre-goto は task.url で
+      // 弾くが、 30x で別 origin に redirect された場合は page.url() を改めて判定する。
+      if (!isAllowedOrigin(page.url(), originSpec, options.startUrl)) {
+        clog.warn({ from: task.url, to: page.url() }, 'out-of-scope redirect skipped');
+        monitors.rotate();
+        continue;
       }
       if (options.waitAfterNavMs > 0) {
         await page.waitForTimeout(options.waitAfterNavMs);

@@ -2,8 +2,10 @@
 
 import { FormEvent, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import type { OriginSpec } from '@testworker/shared';
 import { launchRun } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { parseOriginSpecJson, prettyOriginSpec, webOriginSpecForStartUrl } from '@/lib/origin-spec';
 
 const VIEWPORT_PRESETS = [
   { id: '1280x800', label: '1280 x 800', width: 1280, height: 800 },
@@ -19,6 +21,15 @@ const NUMBER_LIMITS = {
   waitAfterNavMs: { min: 0, max: 10000 },
 } as const;
 
+const SCOPE_PRESETS = [
+  { id: 'same-host', label: 'Same host' },
+  { id: 'same-host-port', label: 'Same host:port' },
+  { id: 'subdomains', label: 'Same host + subdomain' },
+  { id: 'custom', label: 'Custom' },
+] as const;
+
+type ScopePreset = (typeof SCOPE_PRESETS)[number]['id'];
+
 export function NewRunForm({ recentUrls }: { recentUrls: string[] }) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
@@ -26,7 +37,8 @@ export function NewRunForm({ recentUrls }: { recentUrls: string[] }) {
   const [startUrl, setStartUrl] = useState(recentUrls[0] ?? 'https://example.com');
   const [maxDepth, setMaxDepth] = useState(3);
   const [maxPages, setMaxPages] = useState(50);
-  const [sameOriginOnly, setSameOriginOnly] = useState(true);
+  const [scopePreset, setScopePreset] = useState<ScopePreset>('same-host-port');
+  const [customOriginSpec, setCustomOriginSpec] = useState('');
   const [respectRobots, setRespectRobots] = useState(true);
   const [captureWebVitals, setCaptureWebVitals] = useState(true);
   const [viewportId, setViewportId] = useState<(typeof VIEWPORT_PRESETS)[number]['id']>('1280x800');
@@ -43,6 +55,10 @@ export function NewRunForm({ recentUrls }: { recentUrls: string[] }) {
     const preset = VIEWPORT_PRESETS.find((p) => p.id === viewportId) ?? VIEWPORT_PRESETS[0];
     return preset.id === 'custom' ? customViewport : { width: preset.width, height: preset.height };
   }, [customViewport, viewportId]);
+  const scope = useMemo(
+    () => resolveScope(scopePreset, startUrl, customOriginSpec),
+    [customOriginSpec, scopePreset, startUrl],
+  );
   const numbersValid =
     within(maxDepth, NUMBER_LIMITS.maxDepth) &&
     within(maxPages, NUMBER_LIMITS.maxPages) &&
@@ -50,7 +66,7 @@ export function NewRunForm({ recentUrls }: { recentUrls: string[] }) {
     within(waitAfterNavMs, NUMBER_LIMITS.waitAfterNavMs) &&
     viewport.width > 0 &&
     viewport.height > 0;
-  const canSubmit = !isPending && !urlError && numbersValid;
+  const canSubmit = !isPending && !urlError && !scope.error && numbersValid;
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -62,7 +78,8 @@ export function NewRunForm({ recentUrls }: { recentUrls: string[] }) {
           startUrl,
           maxDepth,
           maxPages,
-          sameOriginOnly,
+          originSpec: scope.originSpec,
+          sameOriginOnly: scopePreset === 'same-host-port',
           respectRobots,
           navTimeoutMs,
           waitAfterNavMs,
@@ -195,13 +212,43 @@ export function NewRunForm({ recentUrls }: { recentUrls: string[] }) {
             </div>
           )}
 
-          <div className="grid gap-2 text-xs text-ink-muted">
-            <CheckField
-              label="Same origin"
-              title="外部リンクを追跡せず、開始 URL と同じ origin だけを辿ります。"
-              checked={sameOriginOnly}
-              onChange={setSameOriginOnly}
+          <label
+            className="block text-xs font-medium uppercase tracking-wider text-ink-faint"
+            title="クロールで辿る URL の origin scope です。"
+          >
+            Scope
+            <select
+              value={scopePreset}
+              onChange={(e) => {
+                const next = e.target.value as ScopePreset;
+                if (next === 'custom' && !customOriginSpec && !urlError) {
+                  const current = resolveScope(scopePreset, startUrl, customOriginSpec).originSpec;
+                  if (current) setCustomOriginSpec(prettyOriginSpec(current));
+                }
+                setScopePreset(next);
+              }}
+              className="mt-1 block h-10 w-full rounded-md border border-line bg-bg px-3 text-sm normal-case tracking-normal text-ink outline-none focus:border-accent"
+            >
+              {SCOPE_PRESETS.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {scopePreset === 'custom' && (
+            <TextareaField
+              label="Origin spec JSON"
+              value={customOriginSpec}
+              onChange={setCustomOriginSpec}
+              title="OriginSpec JSON を直接編集します。"
+              rows={7}
             />
+          )}
+          {scope.error && <div className="text-[11px] text-bad">{scope.error}</div>}
+
+          <div className="grid gap-2 text-xs text-ink-muted">
             <CheckField
               label="Respect robots.txt"
               title="robots.txt の Disallow / Allow をクロール時に尊重します。"
@@ -322,11 +369,13 @@ function TextareaField({
   label,
   value,
   title,
+  rows = 3,
   onChange,
 }: {
   label: string;
   value: string;
   title: string;
+  rows?: number;
   onChange: (value: string) => void;
 }) {
   return (
@@ -338,7 +387,7 @@ function TextareaField({
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        rows={3}
+        rows={rows}
         className="mt-1 block w-full resize-y rounded-md border border-line bg-bg px-3 py-2 font-mono text-xs normal-case tracking-normal text-ink outline-none focus:border-accent"
       />
     </label>
@@ -386,6 +435,29 @@ function validateStartUrl(raw: string): string | null {
     return null;
   } catch {
     return '有効な URL を入力してください。';
+  }
+}
+
+function resolveScope(
+  preset: ScopePreset,
+  startUrl: string,
+  customJson: string,
+): { originSpec?: OriginSpec; error: string | null } {
+  try {
+    if (preset === 'custom') {
+      if (!customJson.trim()) return { error: 'OriginSpec JSON は必須です。' };
+      return { originSpec: parseOriginSpecJson(customJson), error: null };
+    }
+
+    const mapped =
+      preset === 'same-host'
+        ? 'same-host'
+        : preset === 'same-host-port'
+          ? 'same-host-port'
+          : 'subdomains';
+    return { originSpec: webOriginSpecForStartUrl(startUrl, mapped), error: null };
+  } catch {
+    return { error: 'Scope を生成できる URL を入力してください。' };
   }
 }
 

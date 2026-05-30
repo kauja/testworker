@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { OriginSpec } from './origin-spec.js';
 
 export const RunStatus = z.enum(['queued', 'running', 'completed', 'failed', 'canceled']);
 export type RunStatus = z.infer<typeof RunStatus>;
@@ -43,6 +44,12 @@ export const CrawlOptions = z.object({
   startUrl: z.string().url(),
   maxDepth: z.number().int().min(0).max(20).default(3),
   maxPages: z.number().int().min(1).max(2000).default(50),
+  /**
+   * Issue #182: crawl scope を boolean より明示的な OriginSpec で表現する。
+   * absent の旧 run / API payload は sameOriginOnly から runner 側で生成する。
+   */
+  originSpec: OriginSpec.optional(),
+  /** @deprecated Use originSpec. Kept as a compatibility shim for existing runs and clients. */
   sameOriginOnly: z.boolean().default(true),
   /**
    * robots.txt の Disallow / Allow を遵守するか。 default true (安全側)。
@@ -127,6 +134,7 @@ export const RunLaunchInput = CrawlOptions.pick({
   startUrl: true,
   maxDepth: true,
   maxPages: true,
+  originSpec: true,
   sameOriginOnly: true,
   respectRobots: true,
   navTimeoutMs: true,
@@ -149,7 +157,7 @@ export type RunLaunchResponse = z.infer<typeof RunLaunchResponse>;
 export const App = z.object({
   id: z.string(),
   name: z.string(),
-  originSpec: z.string(),
+  originSpec: OriginSpec,
   entryUrl: z.string(),
   defaults: z.record(z.string(), z.unknown()).default({}),
   createdAt: z.string(),
