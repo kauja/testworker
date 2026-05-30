@@ -7,6 +7,13 @@ describe('buildRunnerCommand', () => {
       startUrl: 'https://example.com',
       maxDepth: 2,
       maxPages: 10,
+      originSpec: {
+        scheme: 'any',
+        host: { mode: 'exact', value: 'example.com' },
+        port: 'same',
+        allowList: [],
+        blockList: [],
+      },
       sameOriginOnly: true,
       respectRobots: true,
       navTimeoutMs: 20_000,
@@ -30,6 +37,8 @@ describe('buildRunnerCommand', () => {
       '2',
       '--max-pages',
       '10',
+      '--origin-spec',
+      '{"scheme":"any","host":{"mode":"exact","value":"example.com"},"port":"same","allowList":[],"blockList":[]}',
       '--nav-timeout-ms',
       '20000',
       '--wait-after-nav-ms',
@@ -44,6 +53,9 @@ describe('buildRunnerCommand', () => {
       'testworker-smoke',
     ]);
     expect(cmd.env.START_URL).toBe('https://example.com');
+    expect(cmd.env.ORIGIN_SPEC_JSON).toBe(
+      '{"scheme":"any","host":{"mode":"exact","value":"example.com"},"port":"same","allowList":[],"blockList":[]}',
+    );
     expect(cmd.env.SAME_ORIGIN_ONLY).toBe('true');
     expect(cmd.env.VIEWPORT_WIDTH).toBe('1440');
     expect(cmd.env.INCLUDE_URL_PATTERNS).toBe('/docs');

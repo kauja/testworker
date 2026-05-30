@@ -30,7 +30,12 @@ import type {
   StateGraphPayload,
   RunConsoleError,
 } from '@testworker/shared';
-import { CrawlOptions, PageMetrics as PageMetricsSchema, log } from '@testworker/shared';
+import {
+  CrawlOptions,
+  PageMetrics as PageMetricsSchema,
+  log,
+  parseStoredOriginSpec,
+} from '@testworker/shared';
 
 interface RunRow {
   id: string;
@@ -233,7 +238,7 @@ function rowToApp(row: AppRow): App {
   return {
     id: row.id,
     name: row.name,
-    originSpec: row.origin_spec,
+    originSpec: parseStoredOriginSpec(row.origin_spec, row.entry_url),
     entryUrl: row.entry_url,
     defaults,
     createdAt: row.created_at,

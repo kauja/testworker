@@ -21,6 +21,7 @@ export function buildRunnerCommand(options: RunLaunchInput): RunnerCommand {
   args.push('--url', options.startUrl);
   args.push('--max-depth', String(options.maxDepth));
   args.push('--max-pages', String(options.maxPages));
+  if (options.originSpec) args.push('--origin-spec', JSON.stringify(options.originSpec));
   args.push('--nav-timeout-ms', String(options.navTimeoutMs));
   args.push('--wait-after-nav-ms', String(options.waitAfterNavMs));
   args.push('--viewport', `${options.viewport.width}x${options.viewport.height}`);
@@ -40,6 +41,7 @@ export function buildRunnerCommand(options: RunLaunchInput): RunnerCommand {
       START_URL: options.startUrl,
       MAX_DEPTH: String(options.maxDepth),
       MAX_PAGES: String(options.maxPages),
+      ORIGIN_SPEC_JSON: options.originSpec ? JSON.stringify(options.originSpec) : '',
       NAV_TIMEOUT_MS: String(options.navTimeoutMs),
       WAIT_AFTER_NAV_MS: String(options.waitAfterNavMs),
       VIEWPORT_WIDTH: String(options.viewport.width),

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { originSpecForStartUrl, parseStoredOriginSpec } from './origin-spec.js';
 import { CrawlOptions, Run } from './schema.js';
 
 describe('CrawlOptions', () => {
@@ -34,6 +35,28 @@ describe('CrawlOptions', () => {
     expect(() =>
       CrawlOptions.parse({ startUrl: 'https://example.com', navTimeoutMs: 999 }),
     ).toThrow();
+  });
+});
+
+describe('OriginSpec', () => {
+  it('builds localhost same-host specs that allow port changes', () => {
+    expect(originSpecForStartUrl('http://localhost:3000', 'same-host')).toEqual({
+      scheme: 'any',
+      host: { mode: 'exact', value: 'localhost' },
+      port: 'any',
+      allowList: [],
+      blockList: [],
+    });
+  });
+
+  it('parses legacy stored app origins into OriginSpec objects', () => {
+    expect(parseStoredOriginSpec('https://example.com', 'https://example.com/start')).toEqual({
+      scheme: 'https',
+      host: { mode: 'exact', value: 'example.com' },
+      port: 'same',
+      allowList: [],
+      blockList: [],
+    });
   });
 });
 

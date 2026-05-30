@@ -170,6 +170,7 @@ app.post('/apps/:id/runs', async (c) => {
   }
   const parsed = RunLaunchInput.safeParse({
     startUrl: detail.app.entryUrl,
+    originSpec: detail.app.originSpec,
     ...(typeof body === 'object' && body !== null ? body : {}),
   });
   if (!parsed.success) {
