@@ -13,6 +13,7 @@ import {
   getRun,
   getRunDiff,
   getRunErrors,
+  getRunStateGraphDiff,
   getScreenStability,
   getStateGraph,
   listRuns,
@@ -243,6 +244,7 @@ app.get('/runs/:id/diff', (c) => {
   if (!db) return c.json(DB_NOT_READY_BODY, 503);
   const target = c.req.param('id');
   const showFlaky = c.req.query('showFlaky') === '1' || c.req.query('showFlaky') === 'true';
+  const kind = c.req.query('kind') ?? 'screen';
   // ?base=previous で「1 つ前の run」を自動選択。 startUrl が同じ run の中で
   // started_at が target より古い最新を base にする (Intent #125 / Issue #85)。
   let baseId = c.req.query('base');
@@ -251,6 +253,12 @@ app.get('/runs/:id/diff', (c) => {
     if (!prev) return c.json({ error: 'no_previous_run' }, 404);
     baseId = prev;
   }
+  if (kind === 'state') {
+    const diff = getRunStateGraphDiff(db, baseId, target, { showFlaky });
+    if (!diff) return c.json({ error: 'not_found' }, 404);
+    return c.json(diff);
+  }
+  if (kind !== 'screen') return c.json({ error: 'invalid_kind' }, 400);
   const diff = getRunDiff(db, baseId, target, { showFlaky });
   if (!diff) return c.json({ error: 'not_found' }, 404);
   return c.json(diff);

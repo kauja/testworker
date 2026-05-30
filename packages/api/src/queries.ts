@@ -15,9 +15,14 @@ import type {
   RunDiffPage,
   RunErrorsPayload,
   RunNetworkError,
+  RunStateGraphDiff,
   RunSummary,
   Screen,
   ScreenState,
+  StateGraphDiffEdge,
+  StateGraphDiffScreen,
+  StateGraphDiffState,
+  StateGraphTriggerChange,
   ScreenStability,
   StateGraphPayload,
   RunConsoleError,
@@ -91,6 +96,16 @@ interface ScreenStateRow {
   structure_hash: string;
   arrival_trigger: string | null;
   arrival_selector: string | null;
+}
+
+interface StateEdgeRow {
+  id: string;
+  run_id: string;
+  kind: string | null;
+  from_state_id: string | null;
+  to_state_id: string | null;
+  trigger: string;
+  trigger_selector: string | null;
 }
 
 interface PageV2Meta {
@@ -902,6 +917,233 @@ export function getRunDiff(
       newCount: visibleNewPages.length,
       removedCount: visibleRemovedPages.length,
       commonCount: commonPages.length,
+      flakyHiddenCount,
+      showFlaky: opts.showFlaky ?? false,
+    },
+  };
+}
+
+interface StateGraphRun {
+  screens: Screen[];
+  states: ScreenState[];
+  edges: StateEdgeRow[];
+}
+
+function getStateGraphRun(db: Database.Database, runId: string): StateGraphRun {
+  if (!tableExists(db, 'screens') || !tableExists(db, 'screen_states')) {
+    return { screens: [], states: [], edges: [] };
+  }
+  const screens = (
+    db.prepare(`SELECT * FROM screens WHERE run_id = ?`).all(runId) as ScreenRow[]
+  ).map(rowToScreen);
+  const states = (
+    db.prepare(`SELECT * FROM screen_states WHERE run_id = ?`).all(runId) as ScreenStateRow[]
+  ).map(rowToScreenState);
+  const edges = tableExists(db, 'edges')
+    ? (db
+        .prepare(
+          `SELECT id, run_id, kind, from_state_id, to_state_id, trigger, trigger_selector
+           FROM edges
+           WHERE run_id = ? AND kind = 'state'`,
+        )
+        .all(runId) as StateEdgeRow[])
+    : [];
+  return { screens, states, edges };
+}
+
+function toDiffState(state: ScreenState): StateGraphDiffState {
+  return {
+    id: state.id,
+    structureHash: state.structureHash,
+    arrivalTrigger: state.arrivalTrigger,
+    arrivalSelector: state.arrivalSelector,
+  };
+}
+
+function edgeKey(edge: StateGraphDiffEdge): string {
+  return `${edge.fromStructureHash}->${edge.toStructureHash}`;
+}
+
+function toDiffEdges(
+  edges: StateEdgeRow[],
+  stateById: Map<string, ScreenState>,
+  screenId: string,
+): StateGraphDiffEdge[] {
+  const out: StateGraphDiffEdge[] = [];
+  for (const edge of edges) {
+    if (!edge.from_state_id || !edge.to_state_id) continue;
+    const from = stateById.get(edge.from_state_id);
+    const to = stateById.get(edge.to_state_id);
+    if (!from || !to) continue;
+    if (from.screenId !== screenId || to.screenId !== screenId) continue;
+    out.push({
+      id: edge.id,
+      fromStructureHash: from.structureHash,
+      toStructureHash: to.structureHash,
+      trigger: edge.trigger as StateGraphDiffEdge['trigger'],
+      triggerSelector: edge.trigger_selector,
+    });
+  }
+  return out;
+}
+
+function compareStateEdges(
+  baseEdges: StateGraphDiffEdge[],
+  targetEdges: StateGraphDiffEdge[],
+): {
+  addedEdges: StateGraphDiffEdge[];
+  removedEdges: StateGraphDiffEdge[];
+  changedTriggers: StateGraphTriggerChange[];
+} {
+  const baseByPair = new Map(baseEdges.map((edge) => [edgeKey(edge), edge]));
+  const targetByPair = new Map(targetEdges.map((edge) => [edgeKey(edge), edge]));
+  const addedEdges: StateGraphDiffEdge[] = [];
+  const removedEdges: StateGraphDiffEdge[] = [];
+  const changedTriggers: StateGraphTriggerChange[] = [];
+
+  for (const [key, target] of targetByPair.entries()) {
+    const base = baseByPair.get(key);
+    if (!base) {
+      addedEdges.push(target);
+      continue;
+    }
+    if (base.trigger !== target.trigger || base.triggerSelector !== target.triggerSelector) {
+      changedTriggers.push({
+        fromStructureHash: target.fromStructureHash,
+        toStructureHash: target.toStructureHash,
+        baseTrigger: base.trigger,
+        targetTrigger: target.trigger,
+        baseSelector: base.triggerSelector,
+        targetSelector: target.triggerSelector,
+      });
+    }
+  }
+  for (const [key, base] of baseByPair.entries()) {
+    if (!targetByPair.has(key)) removedEdges.push(base);
+  }
+
+  return { addedEdges, removedEdges, changedTriggers };
+}
+
+export function getRunStateGraphDiff(
+  db: Database.Database,
+  baseRunId: string,
+  targetRunId: string,
+  opts: { showFlaky?: boolean } = {},
+): RunStateGraphDiff | null {
+  const baseRow = db.prepare(`SELECT id FROM runs WHERE id = ?`).get(baseRunId) as
+    | { id: string }
+    | undefined;
+  const targetRow = db.prepare(`SELECT id FROM runs WHERE id = ?`).get(targetRunId) as
+    | { id: string }
+    | undefined;
+  if (!baseRow || !targetRow) return null;
+
+  const base = getStateGraphRun(db, baseRunId);
+  const target = getStateGraphRun(db, targetRunId);
+  const baseScreens = new Map(base.screens.map((screen) => [screen.navHash, screen]));
+  const targetScreens = new Map(target.screens.map((screen) => [screen.navHash, screen]));
+  const allNavHashes = new Set([...baseScreens.keys(), ...targetScreens.keys()]);
+  const baseStatesByScreen = new Map<string, ScreenState[]>();
+  const targetStatesByScreen = new Map<string, ScreenState[]>();
+  for (const state of base.states) {
+    const arr = baseStatesByScreen.get(state.screenId) ?? [];
+    arr.push(state);
+    baseStatesByScreen.set(state.screenId, arr);
+  }
+  for (const state of target.states) {
+    const arr = targetStatesByScreen.get(state.screenId) ?? [];
+    arr.push(state);
+    targetStatesByScreen.set(state.screenId, arr);
+  }
+  const baseStateById = new Map(base.states.map((state) => [state.id, state]));
+  const targetStateById = new Map(target.states.map((state) => [state.id, state]));
+
+  const screens: StateGraphDiffScreen[] = [];
+  let flakyHiddenCount = 0;
+
+  for (const navHash of allNavHashes) {
+    const baseScreen = baseScreens.get(navHash);
+    const targetScreen = targetScreens.get(navHash);
+    const representative = targetScreen ?? baseScreen;
+    if (!representative) continue;
+    const stability = getScreenStability(db, navHash, {
+      origin: originOf(representative.url) ?? undefined,
+    });
+    if (!opts.showFlaky && stability?.flaky) {
+      flakyHiddenCount += 1;
+      continue;
+    }
+
+    const baseStates = baseScreen ? (baseStatesByScreen.get(baseScreen.id) ?? []) : [];
+    const targetStates = targetScreen ? (targetStatesByScreen.get(targetScreen.id) ?? []) : [];
+    const baseByHash = new Map(baseStates.map((state) => [state.structureHash, state]));
+    const targetByHash = new Map(targetStates.map((state) => [state.structureHash, state]));
+    const addedStates = targetStates
+      .filter((state) => !baseByHash.has(state.structureHash))
+      .map(toDiffState);
+    const removedStates = baseStates
+      .filter((state) => !targetByHash.has(state.structureHash))
+      .map(toDiffState);
+    const commonStateCount = targetStates.filter((state) =>
+      baseByHash.has(state.structureHash),
+    ).length;
+    const baseEdges = baseScreen ? toDiffEdges(base.edges, baseStateById, baseScreen.id) : [];
+    const targetEdges = targetScreen
+      ? toDiffEdges(target.edges, targetStateById, targetScreen.id)
+      : [];
+    const { addedEdges, removedEdges, changedTriggers } = compareStateEdges(baseEdges, targetEdges);
+
+    if (
+      addedStates.length === 0 &&
+      removedStates.length === 0 &&
+      addedEdges.length === 0 &&
+      removedEdges.length === 0 &&
+      changedTriggers.length === 0
+    ) {
+      continue;
+    }
+
+    screens.push({
+      navHash,
+      title: representative.title,
+      url: representative.url,
+      stabilityScore: stability?.score ?? null,
+      flaky: stability?.flaky ?? false,
+      addedStates,
+      removedStates,
+      commonStateCount,
+      addedEdges,
+      removedEdges,
+      changedTriggers,
+    });
+  }
+
+  screens.sort(
+    (a, b) =>
+      b.addedStates.length +
+        b.removedStates.length +
+        b.addedEdges.length +
+        b.removedEdges.length +
+        b.changedTriggers.length -
+        (a.addedStates.length +
+          a.removedStates.length +
+          a.addedEdges.length +
+          a.removedEdges.length +
+          a.changedTriggers.length) || a.url.localeCompare(b.url),
+  );
+
+  return {
+    baseRunId,
+    targetRunId,
+    screens,
+    summary: {
+      screenCount: screens.length,
+      addedStateCount: screens.reduce((sum, screen) => sum + screen.addedStates.length, 0),
+      removedStateCount: screens.reduce((sum, screen) => sum + screen.removedStates.length, 0),
+      addedEdgeCount: screens.reduce((sum, screen) => sum + screen.addedEdges.length, 0),
+      removedEdgeCount: screens.reduce((sum, screen) => sum + screen.removedEdges.length, 0),
+      triggerChangeCount: screens.reduce((sum, screen) => sum + screen.changedTriggers.length, 0),
       flakyHiddenCount,
       showFlaky: opts.showFlaky ?? false,
     },

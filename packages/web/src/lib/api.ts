@@ -7,6 +7,7 @@ import type {
   RunErrorsPayload,
   RunLaunchInput,
   RunLaunchResponse,
+  RunStateGraphDiff,
   RunSummary,
   ScreenStability,
 } from '@testworker/shared';
@@ -122,7 +123,17 @@ export const fetchRunDiff = (
   init?: RequestInit,
 ) =>
   get<RunDiff>(
-    `/runs/${runId}/diff?base=${encodeURIComponent(base)}&showFlaky=${showFlaky ? '1' : '0'}`,
+    `/runs/${runId}/diff?kind=screen&base=${encodeURIComponent(base)}&showFlaky=${showFlaky ? '1' : '0'}`,
+    init,
+  );
+export const fetchRunStateGraphDiff = (
+  runId: string,
+  base: string | 'previous' = 'previous',
+  showFlaky = false,
+  init?: RequestInit,
+) =>
+  get<RunStateGraphDiff>(
+    `/runs/${runId}/diff?kind=state&base=${encodeURIComponent(base)}&showFlaky=${showFlaky ? '1' : '0'}`,
     init,
   );
 export const fetchScreenStability = (navHash: string, init?: RequestInit) =>

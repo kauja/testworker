@@ -5,6 +5,7 @@ import {
   getGraph,
   getRunDiff,
   getRunErrors,
+  getRunStateGraphDiff,
   getScreenStability,
   getStateGraph,
   pickValidOptionFields,
@@ -154,6 +155,45 @@ function insertRunWithScreen(
     structureHash,
     'initial',
     null,
+  );
+}
+
+function insertScreenState(
+  db: Database.Database,
+  runId: string,
+  screenId: string,
+  stateId: string,
+  structureHash: string,
+): void {
+  db.prepare(`INSERT INTO screen_states VALUES (?, ?, ?, ?, ?, ?)`).run(
+    stateId,
+    runId,
+    screenId,
+    structureHash,
+    'initial',
+    null,
+  );
+}
+
+function insertStateEdge(
+  db: Database.Database,
+  runId: string,
+  fromStateId: string,
+  toStateId: string,
+  trigger: string,
+): void {
+  db.prepare(`INSERT INTO edges VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    `edge_${runId}_${fromStateId}_${toStateId}_${trigger}`,
+    runId,
+    fromStateId,
+    toStateId,
+    'state',
+    fromStateId,
+    toStateId,
+    trigger,
+    null,
+    null,
+    '2026-01-01T00:00:00.000Z',
   );
 }
 
@@ -592,6 +632,73 @@ describe('screen stability integration', () => {
     expect(shown?.newPages).toHaveLength(1);
     expect(shown?.removedPages).toHaveLength(1);
     expect(shown?.newPages[0]).toMatchObject({ flaky: true, stabilityScore: 0 });
+    db.close();
+  });
+});
+
+describe('getRunStateGraphDiff', () => {
+  it('reports added states and edges', () => {
+    const db = createStabilityDb();
+    insertRunWithScreen(db, 'run_1', '2026-01-01T00:00:00.000Z', 'struct_a', 'sig_a');
+    insertRunWithScreen(db, 'run_2', '2026-01-02T00:00:00.000Z', 'struct_a', 'sig_a');
+    insertScreenState(db, 'run_2', 'sc_run_2', 'st_run_2_b', 'struct_b');
+    insertStateEdge(db, 'run_2', 'st_run_2', 'st_run_2_b', 'click');
+
+    const diff = getRunStateGraphDiff(db, 'run_1', 'run_2', { showFlaky: true });
+
+    expect(diff?.screens).toHaveLength(1);
+    expect(diff?.screens[0]).toMatchObject({
+      navHash: 'nav_a',
+      addedStates: [{ structureHash: 'struct_b' }],
+      addedEdges: [{ fromStructureHash: 'struct_a', toStructureHash: 'struct_b' }],
+      removedStates: [],
+    });
+    expect(diff?.summary).toMatchObject({ addedStateCount: 1, addedEdgeCount: 1 });
+    db.close();
+  });
+
+  it('reports removed states and edges', () => {
+    const db = createStabilityDb();
+    insertRunWithScreen(db, 'run_1', '2026-01-01T00:00:00.000Z', 'struct_a', 'sig_a');
+    insertScreenState(db, 'run_1', 'sc_run_1', 'st_run_1_b', 'struct_b');
+    insertStateEdge(db, 'run_1', 'st_run_1', 'st_run_1_b', 'click');
+    insertRunWithScreen(db, 'run_2', '2026-01-02T00:00:00.000Z', 'struct_a', 'sig_a');
+
+    const diff = getRunStateGraphDiff(db, 'run_1', 'run_2', { showFlaky: true });
+
+    expect(diff?.screens).toHaveLength(1);
+    expect(diff?.screens[0]).toMatchObject({
+      removedStates: [{ structureHash: 'struct_b' }],
+      removedEdges: [{ fromStructureHash: 'struct_a', toStructureHash: 'struct_b' }],
+      addedStates: [],
+    });
+    expect(diff?.summary).toMatchObject({ removedStateCount: 1, removedEdgeCount: 1 });
+    db.close();
+  });
+
+  it('reports trigger changes on the same state edge', () => {
+    const db = createStabilityDb();
+    insertRunWithScreen(db, 'run_1', '2026-01-01T00:00:00.000Z', 'struct_a', 'sig_a');
+    insertScreenState(db, 'run_1', 'sc_run_1', 'st_run_1_b', 'struct_b');
+    insertStateEdge(db, 'run_1', 'st_run_1', 'st_run_1_b', 'link');
+    insertRunWithScreen(db, 'run_2', '2026-01-02T00:00:00.000Z', 'struct_a', 'sig_a');
+    insertScreenState(db, 'run_2', 'sc_run_2', 'st_run_2_b', 'struct_b');
+    insertStateEdge(db, 'run_2', 'st_run_2', 'st_run_2_b', 'click');
+
+    const diff = getRunStateGraphDiff(db, 'run_1', 'run_2', { showFlaky: true });
+
+    expect(diff?.screens).toHaveLength(1);
+    expect(diff?.screens[0]?.changedTriggers).toEqual([
+      {
+        fromStructureHash: 'struct_a',
+        toStructureHash: 'struct_b',
+        baseTrigger: 'link',
+        targetTrigger: 'click',
+        baseSelector: null,
+        targetSelector: null,
+      },
+    ]);
+    expect(diff?.summary.triggerChangeCount).toBe(1);
     db.close();
   });
 });

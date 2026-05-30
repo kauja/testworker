@@ -1,12 +1,15 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import type { ReactNode } from 'react';
 import type { RunDiffPage } from '@testworker/shared';
-import { fetchRunDiff } from '@/lib/api';
+import { fetchRunDiff, fetchRunStateGraphDiff } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { StateGraphDiffView } from '@/components/state-graph-diff-view';
 
 interface SearchParams {
   base?: string;
   showFlaky?: string;
+  kind?: string;
 }
 
 export default async function DiffPage({
@@ -20,10 +23,15 @@ export default async function DiffPage({
   const sp = await searchParams;
   const baseQuery = sp.base ?? 'previous';
   const showFlaky = sp.showFlaky === '1' || sp.showFlaky === 'true';
+  const kind = sp.kind === 'state' ? 'state' : 'screen';
 
   let diff;
+  let stateDiff;
   try {
-    diff = await fetchRunDiff(id, baseQuery, showFlaky);
+    [diff, stateDiff] = await Promise.all([
+      fetchRunDiff(id, baseQuery, showFlaky),
+      fetchRunStateGraphDiff(id, baseQuery, showFlaky),
+    ]);
   } catch (err) {
     // base が指定なしで前 run が無い場合は 404 になる → 明示的にメッセージ
     const msg = err instanceof Error ? err.message : String(err);
@@ -50,6 +58,8 @@ export default async function DiffPage({
   const { summary } = diff;
   const topNew = diff.newPages.slice(0, 5);
   const topRemoved = diff.removedPages.slice(0, 5);
+  const activeSummary = kind === 'state' ? stateDiff.summary : summary;
+  const toggleHref = `/runs/${id}/diff?kind=${kind}&base=${encodeURIComponent(baseQuery)}&showFlaky=${showFlaky ? '0' : '1'}`;
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-6">
@@ -62,9 +72,9 @@ export default async function DiffPage({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {summary.flakyHiddenCount > 0 || showFlaky ? (
+          {activeSummary.flakyHiddenCount > 0 || showFlaky ? (
             <Link
-              href={`/runs/${id}/diff?base=${encodeURIComponent(baseQuery)}&showFlaky=${showFlaky ? '0' : '1'}`}
+              href={toggleHref}
               className={cn(
                 'rounded border px-3 py-1.5 text-xs',
                 showFlaky
@@ -72,7 +82,7 @@ export default async function DiffPage({
                   : 'border-line text-ink-muted hover:border-accent hover:text-accent',
               )}
             >
-              {showFlaky ? 'Hide flaky' : `Show flaky (${summary.flakyHiddenCount})`}
+              {showFlaky ? 'Hide flaky' : `Show flaky (${activeSummary.flakyHiddenCount})`}
             </Link>
           ) : null}
           <Link
@@ -84,42 +94,109 @@ export default async function DiffPage({
         </div>
       </div>
 
-      <div className="mb-4 grid grid-cols-6 gap-3 text-xs">
-        <SummaryCard label="base 総ページ数" value={summary.baseTotal} />
-        <SummaryCard label="target 総ページ数" value={summary.targetTotal} />
-        <SummaryCard
-          label="新規ページ"
-          value={summary.newCount}
-          tone={summary.newCount > 0 ? 'accent' : 'mute'}
-        />
-        <SummaryCard
-          label="削除ページ"
-          value={summary.removedCount}
-          tone={summary.removedCount > 0 ? 'bad' : 'mute'}
-        />
-        <SummaryCard label="共通ページ" value={summary.commonCount} />
-        <SummaryCard label="flaky hidden" value={summary.flakyHiddenCount} tone="warn" />
+      <div className="mb-4 flex items-center gap-2 border-b border-line text-xs">
+        <TabLink
+          id={id}
+          base={baseQuery}
+          showFlaky={showFlaky}
+          kind="screen"
+          active={kind === 'screen'}
+        >
+          Screen diff
+        </TabLink>
+        <TabLink
+          id={id}
+          base={baseQuery}
+          showFlaky={showFlaky}
+          kind="state"
+          active={kind === 'state'}
+        >
+          State graph diff
+        </TabLink>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <DiffSection
-          title="新規ページ"
-          emptyLabel="新規ページなし"
-          pages={topNew}
-          allCount={diff.newPages.length}
-          tone="accent"
-          targetRunId={id}
-        />
-        <DiffSection
-          title="削除されたページ"
-          emptyLabel="削除ページなし"
-          pages={topRemoved}
-          allCount={diff.removedPages.length}
-          tone="bad"
-          targetRunId={diff.baseRunId}
-        />
-      </div>
+      {kind === 'screen' ? (
+        <>
+          <div className="mb-4 grid grid-cols-6 gap-3 text-xs">
+            <SummaryCard label="base 総ページ数" value={summary.baseTotal} />
+            <SummaryCard label="target 総ページ数" value={summary.targetTotal} />
+            <SummaryCard
+              label="新規 Screen"
+              value={summary.newCount}
+              tone={summary.newCount > 0 ? 'accent' : 'mute'}
+            />
+            <SummaryCard
+              label="削除 Screen"
+              value={summary.removedCount}
+              tone={summary.removedCount > 0 ? 'bad' : 'mute'}
+            />
+            <SummaryCard label="維持 Screen" value={summary.commonCount} />
+            <SummaryCard label="flaky hidden" value={summary.flakyHiddenCount} tone="warn" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <DiffSection
+              title="新規 Screen"
+              emptyLabel="新規 Screen なし"
+              pages={topNew}
+              allCount={diff.newPages.length}
+              tone="accent"
+              targetRunId={id}
+            />
+            <DiffSection
+              title="削除された Screen"
+              emptyLabel="削除 Screen なし"
+              pages={topRemoved}
+              allCount={diff.removedPages.length}
+              tone="bad"
+              targetRunId={diff.baseRunId}
+            />
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="mb-4 grid grid-cols-6 gap-3 text-xs">
+            <SummaryCard label="changed Screen" value={stateDiff.summary.screenCount} />
+            <SummaryCard label="+ state" value={stateDiff.summary.addedStateCount} tone="accent" />
+            <SummaryCard label="- state" value={stateDiff.summary.removedStateCount} tone="bad" />
+            <SummaryCard label="+ edge" value={stateDiff.summary.addedEdgeCount} tone="accent" />
+            <SummaryCard label="- edge" value={stateDiff.summary.removedEdgeCount} tone="bad" />
+            <SummaryCard label="trigger" value={stateDiff.summary.triggerChangeCount} tone="warn" />
+          </div>
+          <StateGraphDiffView screens={stateDiff.screens} />
+        </>
+      )}
     </div>
+  );
+}
+
+function TabLink({
+  id,
+  base,
+  showFlaky,
+  kind,
+  active,
+  children,
+}: {
+  id: string;
+  base: string;
+  showFlaky: boolean;
+  kind: 'screen' | 'state';
+  active: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <Link
+      href={`/runs/${id}/diff?kind=${kind}&base=${encodeURIComponent(base)}&showFlaky=${showFlaky ? '1' : '0'}`}
+      className={cn(
+        'border-b-2 px-3 py-2',
+        active
+          ? 'border-accent text-accent'
+          : 'border-transparent text-ink-muted hover:text-accent',
+      )}
+    >
+      {children}
+    </Link>
   );
 }
 
