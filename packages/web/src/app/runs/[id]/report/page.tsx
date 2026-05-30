@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { fetchGraph, fetchRunErrors } from '@/lib/api';
+import { getGraph, getRunErrors } from '@/lib/server-api';
 import { cn } from '@/lib/cn';
 import { PrintButton } from '@/components/print-button';
 import { TimeStamp } from '@/components/time-stamp';
@@ -19,7 +19,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
   let graph;
   let errors;
   try {
-    [graph, errors] = await Promise.all([fetchGraph(id), fetchRunErrors(id)]);
+    [graph, errors] = await Promise.all([getGraph(id), getRunErrors(id)]);
   } catch {
     notFound();
   }

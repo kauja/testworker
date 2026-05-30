@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { fetchRunErrors } from '@/lib/api';
+import { getRunErrors } from '@/lib/server-api';
 import { cn } from '@/lib/cn';
 import { ErrorGroupRow } from '@/components/error-group-row';
 
@@ -8,7 +8,7 @@ export default async function ErrorsPage({ params }: { params: Promise<{ id: str
   const { id } = await params;
   let errors;
   try {
-    errors = await fetchRunErrors(id);
+    errors = await getRunErrors(id);
   } catch {
     notFound();
   }

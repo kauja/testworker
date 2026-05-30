@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 import type { RunDiffPage } from '@testworker/shared';
-import { fetchRunDiff, fetchRunStateGraphDiff } from '@/lib/api';
+import { getRunDiff, getRunStateGraphDiff } from '@/lib/server-api';
 import { cn } from '@/lib/cn';
 import { StateGraphDiffView } from '@/components/state-graph-diff-view';
 
@@ -29,8 +29,8 @@ export default async function DiffPage({
   let stateDiff;
   try {
     [diff, stateDiff] = await Promise.all([
-      fetchRunDiff(id, baseQuery, showFlaky),
-      fetchRunStateGraphDiff(id, baseQuery, showFlaky),
+      getRunDiff(id, baseQuery, showFlaky),
+      getRunStateGraphDiff(id, baseQuery, showFlaky),
     ]);
   } catch (err) {
     // base が指定なしで前 run が無い場合は 404 になる → 明示的にメッセージ
