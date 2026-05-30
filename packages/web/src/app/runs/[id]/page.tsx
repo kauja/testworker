@@ -2,6 +2,7 @@ import { getGraph, getRun } from '@/lib/server-api';
 import { GraphView } from '@/components/graph-view';
 import { AutoRefresh } from '@/components/auto-refresh';
 import { RunProgress } from '@/components/run-progress';
+import { StopReasonBadge } from '@/components/stop-reason-badge';
 
 export default async function RunPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -9,16 +10,17 @@ export default async function RunPage({ params }: { params: Promise<{ id: string
 
   const isLive = run.status === 'running' || run.status === 'queued';
   const graph = await getGraph(id).catch(() => null);
+  const hasHeader = isLive || Boolean(run.stoppedReason);
 
   return (
     <div className="h-[calc(100dvh-3rem)]">
       {isLive && <AutoRefresh />}
-      {isLive && (
-        <div className="border-b border-line bg-bg-subtle px-4 py-3">
-          <RunProgress run={run} />
+      {hasHeader && (
+        <div className="flex min-h-12 items-center border-b border-line bg-bg-subtle px-4 py-3">
+          {isLive ? <RunProgress run={run} /> : <StopReasonBadge reason={run.stoppedReason} />}
         </div>
       )}
-      <div className={isLive ? 'h-[calc(100%-5.5rem)]' : 'h-full'}>
+      <div className={hasHeader ? 'h-[calc(100%-3rem)]' : 'h-full'}>
         {graph ? (
           <GraphView graph={graph} />
         ) : (

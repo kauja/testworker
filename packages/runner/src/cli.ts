@@ -20,6 +20,7 @@ async function main(): Promise<void> {
       'app-name': { type: 'string' },
       'max-depth': { type: 'string' },
       'max-pages': { type: 'string' },
+      'stop-conditions': { type: 'string' },
       'origin-spec': { type: 'string' },
       'nav-timeout-ms': { type: 'string' },
       'wait-after-nav-ms': { type: 'string' },
@@ -63,6 +64,9 @@ async function main(): Promise<void> {
     ...(values['app-name'] ? { appName: values['app-name'] } : {}),
     ...(values['max-depth'] ? { maxDepth: Number(values['max-depth']) } : {}),
     ...(values['max-pages'] ? { maxPages: Number(values['max-pages']) } : {}),
+    ...(values['stop-conditions']
+      ? { stopConditions: parseStopConditions(values['stop-conditions']) }
+      : {}),
     ...(values['origin-spec'] ? { originSpec: parseOriginSpec(values['origin-spec']) } : {}),
     ...(values['nav-timeout-ms'] ? { navTimeoutMs: Number(values['nav-timeout-ms']) } : {}),
     ...(values['wait-after-nav-ms'] ? { waitAfterNavMs: Number(values['wait-after-nav-ms']) } : {}),
@@ -121,6 +125,15 @@ function parseOriginSpec(raw: string): CrawlOptions['originSpec'] {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new Error(`invalid --origin-spec JSON: ${message}`);
+  }
+}
+
+function parseStopConditions(raw: string): CrawlOptions['stopConditions'] {
+  try {
+    return CrawlOptions.shape.stopConditions.parse(JSON.parse(raw));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`invalid --stop-conditions JSON: ${message}`);
   }
 }
 

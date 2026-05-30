@@ -38,7 +38,8 @@ beforeEach(() => {
       pages_done INTEGER NOT NULL DEFAULT 0,
       queue_size INTEGER,
       current_url TEXT,
-      har_path TEXT
+      har_path TEXT,
+      stopped_reason TEXT
     );
 
     CREATE TABLE page_states (
@@ -134,12 +135,14 @@ const run = {
     cpuThrottle: 1,
     collectStorage: false,
     deviceProfile: 'desktop' as const,
+    stopConditions: { combine: 'any' as const },
   },
   errorMessage: null,
   pagesDone: 0,
   queueSize: 1,
   currentUrl: 'https://example.com',
   harPath: null,
+  stoppedReason: null,
 };
 
 describe('run repository writes', () => {
@@ -175,13 +178,16 @@ describe('run repository writes', () => {
 
     updateRunStatus(db, 'run_1', 'failed', '2026-01-01T00:01:00.000Z', 'boom');
 
-    expect(db.$sqlite.prepare('SELECT status, finished_at, error_message FROM runs').get()).toEqual(
-      {
-        status: 'failed',
-        finished_at: '2026-01-01T00:01:00.000Z',
-        error_message: 'boom',
-      },
-    );
+    expect(
+      db.$sqlite
+        .prepare('SELECT status, finished_at, error_message, stopped_reason FROM runs')
+        .get(),
+    ).toEqual({
+      status: 'failed',
+      finished_at: '2026-01-01T00:01:00.000Z',
+      error_message: 'boom',
+      stopped_reason: null,
+    });
   });
 });
 

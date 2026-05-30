@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import type { OriginSpec } from '@testworker/shared';
+import type { OriginSpec, StopConditions } from '@testworker/shared';
 import { launchApp } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { parseOriginSpecJson, prettyOriginSpec, webOriginSpecForStartUrl } from '@/lib/origin-spec';
@@ -17,6 +17,11 @@ const VIEWPORT_PRESETS = [
 const NUMBER_LIMITS = {
   maxDepth: { min: 0, max: 20 },
   maxPages: { min: 1, max: 2000 },
+  maxDurationSec: { min: 1, max: 86_400 },
+  maxErrors: { min: 1, max: 100_000 },
+  maxNetworkFails: { min: 1, max: 100_000 },
+  stableForN: { min: 1, max: 1000 },
+  maxScreenshots: { min: 1, max: 2000 },
   navTimeoutMs: { min: 1000, max: 120000 },
   waitAfterNavMs: { min: 0, max: 10000 },
 } as const;
@@ -28,7 +33,16 @@ const SCOPE_PRESETS = [
   { id: 'custom', label: 'Custom' },
 ] as const;
 
+const STOP_PRESETS = [
+  { id: 'quick', label: 'Quick' },
+  { id: 'time-boxed', label: 'Time-boxed' },
+  { id: 'quality-gate', label: 'Quality-gate' },
+  { id: 'goal-oriented', label: 'Goal-oriented' },
+  { id: 'advanced', label: 'Advanced' },
+] as const;
+
 type ScopePreset = (typeof SCOPE_PRESETS)[number]['id'];
+type StopPreset = (typeof STOP_PRESETS)[number]['id'];
 type Step = 1 | 2 | 3;
 type ReachStatus = 'idle' | 'checking' | 'ok' | 'bad';
 
@@ -42,7 +56,16 @@ export function NewRunForm({ recentUrls }: { recentUrls: string[] }) {
   const [appNameTouched, setAppNameTouched] = useState(false);
   const [reachStatus, setReachStatus] = useState<ReachStatus>('idle');
   const [maxDepth, setMaxDepth] = useState(3);
-  const [maxPages, setMaxPages] = useState(50);
+  const [maxPages, setMaxPages] = useState(20);
+  const [stopPreset, setStopPreset] = useState<StopPreset>('quick');
+  const [maxDurationSec, setMaxDurationSec] = useState(120);
+  const [maxErrors, setMaxErrors] = useState(10);
+  const [maxNetworkFails, setMaxNetworkFails] = useState<number | ''>('');
+  const [stableForN, setStableForN] = useState<number | ''>('');
+  const [untilUrl, setUntilUrl] = useState('/dashboard');
+  const [untilSelector, setUntilSelector] = useState('');
+  const [maxScreenshots, setMaxScreenshots] = useState<number | ''>('');
+  const [stopCombine, setStopCombine] = useState<StopConditions['combine']>('any');
   const [scopePreset, setScopePreset] = useState<ScopePreset>('same-host-port');
   const [customOriginSpec, setCustomOriginSpec] = useState('');
   const [respectRobots, setRespectRobots] = useState(true);
@@ -66,6 +89,35 @@ export function NewRunForm({ recentUrls }: { recentUrls: string[] }) {
     () => resolveScope(scopePreset, normalizedStartUrl, customOriginSpec),
     [customOriginSpec, normalizedStartUrl, scopePreset],
   );
+  const stopConditions = useMemo(
+    () =>
+      resolveStopConditions({
+        stopPreset,
+        maxDepth,
+        maxPages,
+        maxDurationSec,
+        maxErrors,
+        maxNetworkFails,
+        stableForN,
+        untilUrl,
+        untilSelector,
+        maxScreenshots,
+        stopCombine,
+      }),
+    [
+      maxDepth,
+      maxDurationSec,
+      maxErrors,
+      maxNetworkFails,
+      maxPages,
+      maxScreenshots,
+      stableForN,
+      stopCombine,
+      stopPreset,
+      untilSelector,
+      untilUrl,
+    ],
+  );
   const numbersValid =
     within(maxDepth, NUMBER_LIMITS.maxDepth) &&
     within(maxPages, NUMBER_LIMITS.maxPages) &&
@@ -73,7 +125,8 @@ export function NewRunForm({ recentUrls }: { recentUrls: string[] }) {
     within(waitAfterNavMs, NUMBER_LIMITS.waitAfterNavMs) &&
     viewport.width > 0 &&
     viewport.height > 0;
-  const canSubmit = !isPending && !urlError && !scope.error && numbersValid;
+  const canSubmit =
+    !isPending && !urlError && !scope.error && !stopConditions.error && numbersValid;
   const canGoNext =
     step === 1 ? !urlError && appName.trim().length > 0 : step === 2 ? !scope.error : true;
 
@@ -106,6 +159,7 @@ export function NewRunForm({ recentUrls }: { recentUrls: string[] }) {
           appName: appName.trim(),
           maxDepth,
           maxPages,
+          stopConditions: stopConditions.value,
           originSpec: scope.originSpec,
           sameOriginOnly: scopePreset === 'same-host-port',
           respectRobots,
@@ -226,6 +280,137 @@ export function NewRunForm({ recentUrls }: { recentUrls: string[] }) {
 
           {step === 3 && (
             <>
+              <label
+                className="block text-xs font-medium uppercase tracking-wider text-ink-faint"
+                title="Run の終了条件 preset です。"
+              >
+                Stop preset
+                <select
+                  value={stopPreset}
+                  onChange={(e) => setStopPreset(e.target.value as StopPreset)}
+                  className="mt-1 block h-10 w-full rounded-md border border-line bg-bg px-3 text-sm normal-case tracking-normal text-ink outline-none focus:border-accent"
+                >
+                  {STOP_PRESETS.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {stopPreset === 'time-boxed' && (
+                <NumberField
+                  label="Max duration sec"
+                  value={maxDurationSec}
+                  onChange={setMaxDurationSec}
+                  min={NUMBER_LIMITS.maxDurationSec.min}
+                  max={NUMBER_LIMITS.maxDurationSec.max}
+                />
+              )}
+
+              {stopPreset === 'quality-gate' && (
+                <NumberField
+                  label="Max errors"
+                  value={maxErrors}
+                  onChange={setMaxErrors}
+                  min={NUMBER_LIMITS.maxErrors.min}
+                  max={NUMBER_LIMITS.maxErrors.max}
+                />
+              )}
+
+              {stopPreset === 'goal-oriented' && (
+                <label
+                  className="block text-xs font-medium uppercase tracking-wider text-ink-faint"
+                  title="到達したら Run を終了する URL pattern です。"
+                >
+                  Until URL
+                  <input
+                    value={untilUrl}
+                    onChange={(e) => setUntilUrl(e.target.value)}
+                    className="mt-1 block h-10 w-full rounded-md border border-line bg-bg px-3 font-mono text-sm normal-case tracking-normal text-ink outline-none focus:border-accent"
+                  />
+                </label>
+              )}
+
+              {stopPreset === 'advanced' && (
+                <details open className="rounded-md border border-line bg-bg/60 px-3 py-2 text-sm">
+                  <summary className="cursor-pointer text-xs font-medium uppercase tracking-wider text-ink-faint hover:text-ink-muted">
+                    Stop conditions
+                  </summary>
+                  <div className="mt-3 space-y-3">
+                    <label className="block text-xs font-medium uppercase tracking-wider text-ink-faint">
+                      Combine
+                      <select
+                        value={stopCombine}
+                        onChange={(e) =>
+                          setStopCombine(e.target.value as StopConditions['combine'])
+                        }
+                        className="mt-1 block h-10 w-full rounded-md border border-line bg-bg px-3 text-sm normal-case tracking-normal text-ink outline-none focus:border-accent"
+                      >
+                        <option value="any">Any</option>
+                        <option value="all">All</option>
+                      </select>
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <NumberField
+                        label="Duration sec"
+                        value={maxDurationSec}
+                        onChange={setMaxDurationSec}
+                        min={NUMBER_LIMITS.maxDurationSec.min}
+                        max={NUMBER_LIMITS.maxDurationSec.max}
+                      />
+                      <OptionalNumberField
+                        label="Screenshots"
+                        value={maxScreenshots}
+                        onChange={setMaxScreenshots}
+                        min={NUMBER_LIMITS.maxScreenshots.min}
+                        max={NUMBER_LIMITS.maxScreenshots.max}
+                      />
+                      <NumberField
+                        label="Errors"
+                        value={maxErrors}
+                        onChange={setMaxErrors}
+                        min={NUMBER_LIMITS.maxErrors.min}
+                        max={NUMBER_LIMITS.maxErrors.max}
+                      />
+                      <OptionalNumberField
+                        label="Network fails"
+                        value={maxNetworkFails}
+                        onChange={setMaxNetworkFails}
+                        min={NUMBER_LIMITS.maxNetworkFails.min}
+                        max={NUMBER_LIMITS.maxNetworkFails.max}
+                      />
+                      <OptionalNumberField
+                        label="Stable steps"
+                        value={stableForN}
+                        onChange={setStableForN}
+                        min={NUMBER_LIMITS.stableForN.min}
+                        max={NUMBER_LIMITS.stableForN.max}
+                      />
+                    </div>
+                    <label className="block text-xs font-medium uppercase tracking-wider text-ink-faint">
+                      Until URL
+                      <input
+                        value={untilUrl}
+                        onChange={(e) => setUntilUrl(e.target.value)}
+                        className="mt-1 block h-10 w-full rounded-md border border-line bg-bg px-3 font-mono text-sm normal-case tracking-normal text-ink outline-none focus:border-accent"
+                      />
+                    </label>
+                    <label className="block text-xs font-medium uppercase tracking-wider text-ink-faint">
+                      Until selector
+                      <input
+                        value={untilSelector}
+                        onChange={(e) => setUntilSelector(e.target.value)}
+                        className="mt-1 block h-10 w-full rounded-md border border-line bg-bg px-3 font-mono text-sm normal-case tracking-normal text-ink outline-none focus:border-accent"
+                      />
+                    </label>
+                  </div>
+                </details>
+              )}
+              {stopConditions.error && (
+                <div className="text-[11px] text-bad">{stopConditions.error}</div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <NumberField
                   label="Depth"
@@ -478,6 +663,37 @@ function NumberField({
   );
 }
 
+function OptionalNumberField({
+  label,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  label: string;
+  value: number | '';
+  min: number;
+  max: number;
+  onChange: (value: number | '') => void;
+}) {
+  return (
+    <label className="text-xs font-medium uppercase tracking-wider text-ink-faint">
+      {label}
+      <input
+        type="number"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => {
+          if (e.target.value === '') onChange('');
+          else if (!Number.isNaN(e.target.valueAsNumber)) onChange(e.target.valueAsNumber);
+        }}
+        className="mt-1 block h-10 w-full rounded-md border border-line bg-bg px-3 text-sm normal-case tracking-normal text-ink outline-none transition-colors focus:border-accent"
+      />
+    </label>
+  );
+}
+
 function TextareaField({
   label,
   value,
@@ -616,6 +832,50 @@ function resolveScope(
   } catch {
     return { error: 'Scope を生成できる URL を入力してください。' };
   }
+}
+
+function resolveStopConditions(input: {
+  stopPreset: StopPreset;
+  maxDepth: number;
+  maxPages: number;
+  maxDurationSec: number;
+  maxErrors: number;
+  maxNetworkFails: number | '';
+  stableForN: number | '';
+  untilUrl: string;
+  untilSelector: string;
+  maxScreenshots: number | '';
+  stopCombine: StopConditions['combine'];
+}): { value: StopConditions; error: string | null } {
+  if (input.stopPreset === 'quick') {
+    return { value: { combine: 'any', maxPages: input.maxPages }, error: null };
+  }
+  if (input.stopPreset === 'time-boxed') {
+    return { value: { combine: 'any', maxDurationSec: input.maxDurationSec }, error: null };
+  }
+  if (input.stopPreset === 'quality-gate') {
+    return { value: { combine: 'any', maxErrors: input.maxErrors }, error: null };
+  }
+  if (input.stopPreset === 'goal-oriented') {
+    const untilUrl = input.untilUrl.trim();
+    return untilUrl
+      ? { value: { combine: 'any', untilUrl }, error: null }
+      : { value: { combine: 'any' }, error: 'Until URL is required.' };
+  }
+
+  const value: StopConditions = {
+    combine: input.stopCombine,
+    maxDepth: input.maxDepth,
+    maxPages: input.maxPages,
+    maxDurationSec: input.maxDurationSec,
+    maxErrors: input.maxErrors,
+  };
+  if (input.maxNetworkFails !== '') value.maxNetworkFails = input.maxNetworkFails;
+  if (input.stableForN !== '') value.stableForN = input.stableForN;
+  if (input.maxScreenshots !== '') value.maxScreenshots = input.maxScreenshots;
+  if (input.untilUrl.trim()) value.untilUrl = input.untilUrl.trim();
+  if (input.untilSelector.trim()) value.untilSelector = input.untilSelector.trim();
+  return { value, error: null };
 }
 
 function within(value: number, limits: { min: number; max: number }): boolean {

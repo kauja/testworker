@@ -8,6 +8,7 @@ describe('buildRunnerCommand', () => {
       appName: 'Example App',
       maxDepth: 2,
       maxPages: 10,
+      stopConditions: { combine: 'any', maxDurationSec: 120 },
       originSpec: {
         scheme: 'any',
         host: { mode: 'exact', value: 'example.com' },
@@ -41,6 +42,8 @@ describe('buildRunnerCommand', () => {
       '2',
       '--max-pages',
       '10',
+      '--stop-conditions',
+      '{"combine":"any","maxDurationSec":120}',
       '--origin-spec',
       '{"scheme":"any","host":{"mode":"exact","value":"example.com"},"port":"same","allowList":[],"blockList":[]}',
       '--nav-timeout-ms',
@@ -62,6 +65,7 @@ describe('buildRunnerCommand', () => {
     expect(cmd.env.ORIGIN_SPEC_JSON).toBe(
       '{"scheme":"any","host":{"mode":"exact","value":"example.com"},"port":"same","allowList":[],"blockList":[]}',
     );
+    expect(cmd.env.STOP_CONDITIONS_JSON).toBe('{"combine":"any","maxDurationSec":120}');
     expect(cmd.env.SAME_ORIGIN_ONLY).toBe('true');
     expect(cmd.env.VIEWPORT_WIDTH).toBe('1440');
     expect(cmd.env.INCLUDE_URL_PATTERNS).toBe('/docs');
@@ -73,6 +77,7 @@ describe('buildRunnerCommand', () => {
       startUrl: 'https://example.com',
       maxDepth: 0,
       maxPages: 1,
+      stopConditions: { combine: 'any' },
       sameOriginOnly: false,
       respectRobots: false,
       navTimeoutMs: 1000,
