@@ -12,6 +12,7 @@ import type {
   RunLaunchResponse,
   RunStateGraphDiff,
   RunSummary,
+  Schedule,
   ScreenStability,
 } from '@testworker/shared';
 
@@ -105,12 +106,45 @@ async function post<T>(path: string, body: unknown, init?: RequestInit): Promise
   return (await res.json()) as T;
 }
 
+async function put<T>(path: string, body: unknown, init?: RequestInit): Promise<T> {
+  let res: Response;
+  try {
+    const headers = new Headers(init?.headers);
+    headers.set('content-type', 'application/json');
+    res = await fetch(`${base()}${path}`, {
+      ...init,
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(body),
+      cache: 'no-store',
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new ApiError('unreachable', `api ${path} unreachable: ${msg}`, {
+      hint: 'API server に到達できません。 `make up` で api コンテナが起動しているか確認してください。',
+    });
+  }
+  if (!res.ok) {
+    let hint: string | undefined;
+    try {
+      const parsed = (await res.json()) as { hint?: string; message?: string; error?: string };
+      hint = parsed.hint ?? parsed.message ?? parsed.error;
+    } catch {
+      /* noop */
+    }
+    throw new ApiError('http', `api ${path} ${res.status}`, { status: res.status, hint });
+  }
+  return (await res.json()) as T;
+}
+
 export const apiBase = base;
 
 export const fetchRuns = (init?: RequestInit) => get<RunSummary[]>('/runs', init);
 export const fetchApps = (init?: RequestInit) => get<AppSummary[]>('/apps', init);
 export const fetchApp = (appId: string, init?: RequestInit) =>
   get<AppDetail>(`/apps/${appId}`, init);
+export const updateAppSchedule = (appId: string, input: Schedule, init?: RequestInit) =>
+  put<AppDetail['app']>(`/apps/${appId}/schedule`, input, init);
 export const launchRun = (input: RunLaunchInput, init?: RequestInit) =>
   post<RunLaunchResponse>('/runs', input, init);
 export const launchApp = (input: RunLaunchInput, init?: RequestInit) =>

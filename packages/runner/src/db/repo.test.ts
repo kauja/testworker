@@ -39,7 +39,8 @@ beforeEach(() => {
       queue_size INTEGER,
       current_url TEXT,
       har_path TEXT,
-      stopped_reason TEXT
+      stopped_reason TEXT,
+      origin TEXT NOT NULL DEFAULT 'manual'
     );
 
     CREATE TABLE page_states (
@@ -136,8 +137,10 @@ const run = {
     collectStorage: false,
     deviceProfile: 'desktop' as const,
     stopConditions: { combine: 'any' as const },
+    runOrigin: 'manual' as const,
   },
   errorMessage: null,
+  origin: 'manual' as const,
   pagesDone: 0,
   queueSize: 1,
   currentUrl: 'https://example.com',

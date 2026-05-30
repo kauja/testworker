@@ -160,6 +160,7 @@ export function NewRunForm({ recentUrls }: { recentUrls: string[] }) {
           maxDepth,
           maxPages,
           stopConditions: stopConditions.value,
+          runOrigin: 'manual',
           originSpec: scope.originSpec,
           sameOriginOnly: scopePreset === 'same-host-port',
           respectRobots,

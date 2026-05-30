@@ -30,12 +30,16 @@ import type {
   ScreenStability,
   StateGraphPayload,
   RunConsoleError,
+  Schedule,
 } from '@testworker/shared';
 import {
   CrawlOptions,
   ErrorContext as ErrorContextSchema,
   PageMetrics as PageMetricsSchema,
+  RunOrigin as RunOriginSchema,
   RunStoppedReason as RunStoppedReasonSchema,
+  Schedule as ScheduleSchema,
+  validateCronExpression,
   log,
   parseStoredOriginSpec,
 } from '@testworker/shared';
@@ -61,6 +65,8 @@ interface RunRow {
   har_path: string | null;
   /** Issue #190: stop condition / crash reason. Older DB files do not have this column. */
   stopped_reason?: string | null;
+  /** Issue #191: how the run was triggered. Older DB files do not have this column. */
+  origin?: string | null;
 }
 
 interface AppRow {
@@ -69,6 +75,8 @@ interface AppRow {
   origin_spec: string;
   entry_url: string;
   defaults_json: string;
+  schedule_json?: string | null;
+  last_scheduled_at?: string | null;
   created_at: string;
 }
 
@@ -225,6 +233,7 @@ export function rowToRun(row: RunRow): Run {
           typeof validFields.stopConditions === 'object' && validFields.stopConditions !== null
             ? (validFields.stopConditions as CrawlOptions['stopConditions'])
             : { combine: 'any' },
+        runOrigin: 'manual',
       } as CrawlOptions;
     }
   }
@@ -237,12 +246,18 @@ export function rowToRun(row: RunRow): Run {
     finishedAt: row.finished_at,
     options,
     errorMessage: row.error_message,
+    origin: parseRunOrigin(row.origin),
     stoppedReason: parseStoppedReason(row.stopped_reason),
     pagesDone: row.pages_done ?? 0,
     queueSize: row.queue_size,
     currentUrl: row.current_url,
     harPath: row.har_path ?? null,
   };
+}
+
+function parseRunOrigin(raw: string | null | undefined): Run['origin'] {
+  const parsed = RunOriginSchema.safeParse(raw);
+  return parsed.success ? parsed.data : 'manual';
 }
 
 function parseStoppedReason(raw: string | null | undefined): Run['stoppedReason'] {
@@ -266,8 +281,52 @@ function rowToApp(row: AppRow): App {
     originSpec: parseStoredOriginSpec(row.origin_spec, row.entry_url),
     entryUrl: row.entry_url,
     defaults,
+    schedule: parseSchedule(row.schedule_json),
+    lastScheduledAt: row.last_scheduled_at ?? null,
     createdAt: row.created_at,
   };
+}
+
+function parseSchedule(raw: string | null | undefined): Schedule {
+  if (!raw) return ScheduleSchema.parse({});
+  try {
+    const parsed = ScheduleSchema.safeParse(JSON.parse(raw));
+    if (parsed.success) return parsed.data;
+  } catch {
+    /* fall through */
+  }
+  return ScheduleSchema.parse({});
+}
+
+export function updateAppSchedule(
+  db: Database.Database,
+  appId: string,
+  schedule: Schedule,
+): App | null {
+  const validation = validateCronExpression(schedule.cron);
+  if (!validation.ok) throw new Error(validation.error ?? 'invalid cron');
+  const parsed = ScheduleSchema.parse(schedule);
+  const updated = db
+    .prepare(`UPDATE apps SET schedule_json = ? WHERE id = ?`)
+    .run(JSON.stringify(parsed), appId);
+  if (updated.changes === 0) return null;
+  const row = db.prepare(`SELECT * FROM apps WHERE id = ?`).get(appId) as AppRow | undefined;
+  return row ? rowToApp(row) : null;
+}
+
+export function markAppScheduled(db: Database.Database, appId: string, scheduledAt: string): void {
+  db.prepare(`UPDATE apps SET last_scheduled_at = ? WHERE id = ?`).run(scheduledAt, appId);
+}
+
+export function hasRunningRunForApp(db: Database.Database, appId: string): boolean {
+  const row = db
+    .prepare(
+      `SELECT 1 AS present FROM runs
+       WHERE app_id = ? AND status IN ('queued', 'running')
+       LIMIT 1`,
+    )
+    .get(appId) as { present: number } | undefined;
+  return row !== undefined;
 }
 
 function parsePageMetrics(raw: string | null): PageMetrics {

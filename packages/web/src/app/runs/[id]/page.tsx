@@ -1,6 +1,7 @@
 import { getGraph, getRun } from '@/lib/server-api';
 import { GraphView } from '@/components/graph-view';
 import { AutoRefresh } from '@/components/auto-refresh';
+import { RunOriginBadge } from '@/components/run-origin-badge';
 import { RunProgress } from '@/components/run-progress';
 import { StopReasonBadge } from '@/components/stop-reason-badge';
 
@@ -10,13 +11,14 @@ export default async function RunPage({ params }: { params: Promise<{ id: string
 
   const isLive = run.status === 'running' || run.status === 'queued';
   const graph = await getGraph(id).catch(() => null);
-  const hasHeader = isLive || Boolean(run.stoppedReason);
+  const hasHeader = isLive || Boolean(run.stoppedReason) || run.origin !== 'manual';
 
   return (
     <div className="h-[calc(100dvh-3rem)]">
       {isLive && <AutoRefresh />}
       {hasHeader && (
-        <div className="flex min-h-12 items-center border-b border-line bg-bg-subtle px-4 py-3">
+        <div className="flex min-h-12 items-center gap-2 border-b border-line bg-bg-subtle px-4 py-3">
+          <RunOriginBadge origin={run.origin} />
           {isLive ? <RunProgress run={run} /> : <StopReasonBadge reason={run.stoppedReason} />}
         </div>
       )}

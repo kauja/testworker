@@ -62,6 +62,13 @@ export function upsertAppForRun(
     originSpec,
     entryUrl: run.startUrl,
     defaults: {},
+    schedule: {
+      enabled: false,
+      cron: '0 3 * * *',
+      overrides: { notifyOnDiff: true },
+      skipIfPreviousStillRunning: true,
+    },
+    lastScheduledAt: null,
     createdAt: run.startedAt,
   };
   db.$sqlite
@@ -92,9 +99,9 @@ export function insertRun(db: Db, run: Run): void {
   const stmt = db.$sqlite.prepare(`
     INSERT INTO runs (
       id, start_url, status, started_at, finished_at, options_json, error_message,
-      pages_done, queue_size, current_url, har_path, app_id, stopped_reason
+      pages_done, queue_size, current_url, har_path, app_id, stopped_reason, origin
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run(
     run.id,
@@ -110,6 +117,7 @@ export function insertRun(db: Db, run: Run): void {
     run.harPath,
     run.appId ?? app?.id ?? null,
     run.stoppedReason,
+    run.origin,
   );
 }
 

@@ -5,6 +5,7 @@ import {
   DeviceProfile,
   log,
   NetworkThrottlePreset,
+  RunOrigin,
   WaitStrategy,
 } from '@testworker/shared';
 import { openDb } from './db/client.js';
@@ -21,6 +22,7 @@ async function main(): Promise<void> {
       'max-depth': { type: 'string' },
       'max-pages': { type: 'string' },
       'stop-conditions': { type: 'string' },
+      'run-origin': { type: 'string' },
       'origin-spec': { type: 'string' },
       'nav-timeout-ms': { type: 'string' },
       'wait-after-nav-ms': { type: 'string' },
@@ -67,6 +69,7 @@ async function main(): Promise<void> {
     ...(values['stop-conditions']
       ? { stopConditions: parseStopConditions(values['stop-conditions']) }
       : {}),
+    ...(values['run-origin'] ? { runOrigin: RunOrigin.parse(values['run-origin']) } : {}),
     ...(values['origin-spec'] ? { originSpec: parseOriginSpec(values['origin-spec']) } : {}),
     ...(values['nav-timeout-ms'] ? { navTimeoutMs: Number(values['nav-timeout-ms']) } : {}),
     ...(values['wait-after-nav-ms'] ? { waitAfterNavMs: Number(values['wait-after-nav-ms']) } : {}),

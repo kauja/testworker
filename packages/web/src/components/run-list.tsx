@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import type { RunSummary } from '@testworker/shared';
 import { cn } from '@/lib/cn';
+import { RunOriginBadge } from './run-origin-badge';
 import { RunProgress } from './run-progress';
 import { StopReasonBadge } from './stop-reason-badge';
 import { TimeStamp } from './time-stamp';
@@ -59,6 +60,7 @@ export function RunList({ runs }: { runs: RunSummary[] }) {
                 value={r.errorCount}
                 tone={r.errorCount > 0 ? 'bad' : undefined}
               />
+              <RunOriginBadge origin={r.run.origin} compact />
               <StopReasonBadge reason={r.run.stoppedReason} compact />
             </div>
             {(r.run.status === 'running' || r.run.status === 'queued') && (
