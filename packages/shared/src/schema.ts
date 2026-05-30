@@ -425,3 +425,62 @@ export const RunDiff = z.object({
   }),
 });
 export type RunDiff = z.infer<typeof RunDiff>;
+
+export const StateGraphDiffState = z.object({
+  id: z.string(),
+  structureHash: z.string(),
+  arrivalTrigger: ArrivalTrigger.nullable(),
+  arrivalSelector: z.string().nullable(),
+});
+export type StateGraphDiffState = z.infer<typeof StateGraphDiffState>;
+
+export const StateGraphDiffEdge = z.object({
+  id: z.string(),
+  fromStructureHash: z.string(),
+  toStructureHash: z.string(),
+  trigger: NavigationTrigger,
+  triggerSelector: z.string().nullable(),
+});
+export type StateGraphDiffEdge = z.infer<typeof StateGraphDiffEdge>;
+
+export const StateGraphTriggerChange = z.object({
+  fromStructureHash: z.string(),
+  toStructureHash: z.string(),
+  baseTrigger: NavigationTrigger,
+  targetTrigger: NavigationTrigger,
+  baseSelector: z.string().nullable(),
+  targetSelector: z.string().nullable(),
+});
+export type StateGraphTriggerChange = z.infer<typeof StateGraphTriggerChange>;
+
+export const StateGraphDiffScreen = z.object({
+  navHash: z.string(),
+  title: z.string(),
+  url: z.string(),
+  stabilityScore: z.number().min(0).max(1).nullable(),
+  flaky: z.boolean(),
+  addedStates: z.array(StateGraphDiffState),
+  removedStates: z.array(StateGraphDiffState),
+  commonStateCount: z.number().int().min(0),
+  addedEdges: z.array(StateGraphDiffEdge),
+  removedEdges: z.array(StateGraphDiffEdge),
+  changedTriggers: z.array(StateGraphTriggerChange),
+});
+export type StateGraphDiffScreen = z.infer<typeof StateGraphDiffScreen>;
+
+export const RunStateGraphDiff = z.object({
+  baseRunId: z.string(),
+  targetRunId: z.string(),
+  screens: z.array(StateGraphDiffScreen),
+  summary: z.object({
+    screenCount: z.number().int().min(0),
+    addedStateCount: z.number().int().min(0),
+    removedStateCount: z.number().int().min(0),
+    addedEdgeCount: z.number().int().min(0),
+    removedEdgeCount: z.number().int().min(0),
+    triggerChangeCount: z.number().int().min(0),
+    flakyHiddenCount: z.number().int().min(0).default(0),
+    showFlaky: z.boolean().default(false),
+  }),
+});
+export type RunStateGraphDiff = z.infer<typeof RunStateGraphDiff>;
